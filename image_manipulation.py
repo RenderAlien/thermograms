@@ -53,34 +53,6 @@ class Timage:
         
         return Timage(np_arr=new_arr)
     
-    def threading_median_filtered(self, wind_size=3):
-        '''Useless'''
-
-        def find_medians(start_i, stop_i):
-            nonlocal new_arr
-            for i in range(start_i, stop_i):
-                for j in range(n):
-                    if wind_size <= i < m - wind_size and wind_size <= j < n - wind_size:
-                        neighs = []
-                        for n_i in range(i - wind_size, i+wind_size+1):
-                            neighs.extend(self.arr[n_i][j-wind_size:j+wind_size+1])
-                        new_arr[i][j] = median(neighs)
-                    else:
-                        new_arr[i][j] = self.arr[i][j]
-
-        n, m = self.get_image().size
-        new_arr = np.zeros((m,n), dtype=np.uint8)
-
-        t1 = Thread(target=find_medians, args=(0,n//3), daemon=False)
-        t2 = Thread(target=find_medians, args=(n//3,2*n//3), daemon=False)
-        t3 = Thread(target=find_medians, args=(2*n//3,n), daemon=False)
-        
-        for t in [t1, t2, t3]: t.start()
-        for t in [t1, t2, t3]: t.join()
-
-        
-        return Timage(np_arr=new_arr)
-    
     def gaussian_filtered(self, blur=1, wind_size=3):
         self_arr = self.get_array()
         new_arr = self_arr.copy()
