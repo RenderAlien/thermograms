@@ -17,7 +17,7 @@ class Timage:
             array (np.ndarray, optional): 2D numpy array representing the image data. Defaults to None.
 
         Raises:
-            ValueError: _description_
+            ValueError: Exactly one of 'image' or 'arr' must be provided to initialize Timage.
         """
         if (image is None and array is None) or (
             image is not None and array is not None
@@ -57,7 +57,7 @@ class Timage:
     def array(self) -> np.ndarray:
         return self.__arr
 
-    def median(self, radius=3) -> "Timage":
+    def median_blur(self, radius=3) -> "Timage":
         n, m = self.__img.size
         new_arr = np.zeros((m, n), dtype=np.uint8)
         for i in trange(m):
@@ -72,7 +72,7 @@ class Timage:
 
         return Timage(array=new_arr)
 
-    def gaussian(self, blur=1, radius=3) -> "Timage":
+    def gaussian_blur(self, blur=1, radius=3) -> "Timage":
         self_arr = self.__arr
         new_arr = self.__arr.copy()
 
@@ -115,6 +115,3 @@ class Timage:
             return srtd[len(arr)//2]
         else:
             return sum(srtd[len(arr)//2-1:len(arr)//2+1])/2
-
-if __name__=='__main__':
-    ...
