@@ -1,96 +1,120 @@
 from tqdm import trange
-from threading import Thread
 import random as rnd
 from math import exp, pi
+from typing import List
 
 from PIL import Image
 import numpy as np
 
-from arr_manipulation import *
-
+from IPython.display import display
 
 class Timage:
-    def __init__(self, image=None, np_arr=None):
-        self.image = image
-        self.arr = np_arr
-    
-    def __add__(self, summand):
-        assert self.get_image().size == summand.get_image().size
-        n, m = self.get_image().size
-        self_arr = self.get_array()
-        summand_arr = summand.get_array()
-        new_arr = np.zeros((m, n), dtype=np.uint8)
+    def __init__(self, *, image: Image = None, array: np.ndarray = None) -> None:
+        """_summary_
+
+        Args:
+            image (_type_, optional): Image representing the array data. Defaults to None.
+            array (np.ndarray, optional): 2D numpy array representing the image data. Defaults to None.
+
+        Raises:
+            ValueError: _description_
+        """
+        if (image is None and array is None) or (
+            image is not None and array is not None
+        ):
+            raise ValueError(
+                "Exactly one of 'image' or 'arr' must be provided to initialize Timage."
+            )
+        elif image is not None: #Сразу переводим в серый
+            self.__img = image.convert("L")
+            self.__arr = np.array(self.__img)
+        else:
+            self.__img = Image.fromarray(array).convert("L")
+            self.__arr = np.array(self.__img)
+
+    def __add__(self, other: "Timage") -> "Timage":
+        if self.image.size != other.image.size:
+            raise ValueError("Can't add images of different sizes.")
+        n, m = self.image.size
+        self_arr = self.array
+        other_arr = other.array
+        out_arr = np.zeros((m, n), dtype=np.uint8)
         for i in range(m):
             for j in range(n):
-                new_arr[i][j] = (self_arr[i][j] + summand_arr[i][j]) / 2
-        
-        return Timage(np_arr=new_arr)
+                out_arr[i][j] = (self_arr[i][j] + other_arr[i][j]) / 2
+
+        return Timage(array=out_arr)
     
-    def get_image(self):
-        if self.image is None:
-            self.image = Image.fromarray(self.arr)
-        return self.image
-    
-    def get_array(self):
-        if self.arr is None:
-            one_line = np.array(self.image.getdata())
-            width, height = self.image.size
-            self.arr = np.array([one_line[i * width:(i + 1) * width] for i in range(height)], dtype=np.uint8)
-        return self.arr
-    
-    def median_filtered(self, wind_size=3):
-        n, m = self.get_image().size
-        new_arr = np.zeros((m,n), dtype=np.uint8)
+    def __repr__(self):
+        display(self.__img)
+        return ""
+
+    @property
+    def image(self) -> Image:
+        return self.__img
+
+    @property
+    def array(self) -> np.ndarray:
+        return self.__arr
+
+    def median(self, radius=3) -> "Timage":
+        n, m = self.__img.size
+        new_arr = np.zeros((m, n), dtype=np.uint8)
         for i in trange(m):
             for j in range(n):
-                if wind_size <= i < m - wind_size and wind_size <= j < n - wind_size:
+                if radius <= i < m - radius and radius <= j < n - radius:
                     neighs = []
-                    for n_i in range(i - wind_size, i+wind_size+1):
-                        neighs.extend(self.arr[n_i][j-wind_size:j+wind_size+1])
-                    new_arr[i][j] = median(neighs)
+                    for n_i in range(i - radius, i + radius + 1):
+                        neighs.extend(self.__arr[n_i][j - radius : j + radius + 1])
+                    new_arr[i][j] = self.__flat_median(neighs)
                 else:
-                    new_arr[i][j] = self.arr[i][j]
-        
-        return Timage(np_arr=new_arr)
-    
-    def gaussian_filtered(self, blur=1, wind_size=3):
-        self_arr = self.get_array()
-        new_arr = self_arr.copy()
+                    new_arr[i][j] = self.__arr[i][j]
 
-        G = {} #Gaussian kernel
-        for m in range(-wind_size, wind_size+1):
-            for n in range(-wind_size, wind_size+1):
-                G[(m, n)] = exp(-(m**2 + n**2)/(2*blur**2)) / (2 * pi * blur**2)
+        return Timage(array=new_arr)
 
-        for i in trange(wind_size, len(new_arr)-wind_size):
-            for j in range(wind_size, len(new_arr[0])-wind_size):
-                new_arr[i][j] = sum(sum(G[(m, n)]*self_arr[i+m][j+n] for n in range(-wind_size, wind_size+1)) for m in range(-wind_size, wind_size+1))
-        
-        return Timage(np_arr=new_arr)
-    
-    def salt_and_pepper_noised(self, intensity=0.1):
-        new_arr = self.get_array().copy()
-        n, m = self.get_image().size
-        
+    def gaussian(self, blur=1, radius=3) -> "Timage":
+        self_arr = self.__arr
+        new_arr = self.__arr.copy()
+
+        G = {}  # Gaussian kernel
+        for m in range(-radius, radius + 1):
+            for n in range(-radius, radius + 1):
+                G[(m, n)] = exp(-(m**2 + n**2) / (2 * blur**2)) / (2 * pi * blur**2)
+
+        for i in trange(radius, len(new_arr) - radius):
+            for j in range(radius, len(new_arr[0]) - radius):
+                new_arr[i][j] = sum(
+                    sum(
+                        G[(m, n)] * self_arr[i + m][j + n]
+                        for n in range(-radius, radius + 1)
+                    )
+                    for m in range(-radius, radius + 1)
+                )
+
+        return Timage(array=new_arr)
+
+    def salt_and_pepper(self, intensity=0.1) -> "Timage":
+        new_arr = self.__arr.copy()
+        n, m = self.__img.size
+
         for i in range(m):
             for j in range(n):
                 r = rnd.random()
-                if r <= intensity/2:
+                if r <= intensity / 2:
                     new_arr[i][j] = 0
                 elif r <= intensity:
                     new_arr[i][j] = 255
-        
-        return Timage(np_arr=new_arr)
 
-    def get_grayscale(self):
-        self_arr = self.get_array()
-        assert len(self_arr[0][0]) == 4
-        n, m = self.get_image().size
-        new_arr = np.zeros((m, n), dtype=np.uint8)
+        return Timage(array=new_arr)
+    
+    def __flat_median(self, arr: List[float]) -> float:
+        '''Median of unsorted array'''
+        '''time: O(n*log(n))'''
+        srtd = sorted(arr)
+        if len(arr)%2==1:
+            return srtd[len(arr)//2]
+        else:
+            return sum(srtd[len(arr)//2-1:len(arr)//2+1])/2
 
-        for i in trange(m):
-            for j in range(n):
-                r, g, b, br = self_arr[i][j]
-                new_arr[i][j] = (br/255)*(0.299*r + 0.587*g + 0.114*b)
-        
-        return Timage(np_arr=new_arr)
+if __name__=='__main__':
+    ...
