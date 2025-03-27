@@ -93,7 +93,7 @@ class Timage:
 
         return Timage(array=new_arr)
 
-    def salt_and_pepper(self, intensity=0.1) -> "Timage":
+    def salt_and_pepper_noise(self, intensity=0.1) -> "Timage":
         new_arr = self.__arr.copy()
         n, m = self.__img.size
 
@@ -107,6 +107,17 @@ class Timage:
 
         return Timage(array=new_arr)
     
+    def gaussian_noise(self, mean=0, stddev=32) -> "Timage":
+        n, m = self.__img.size
+        new_arr = np.zeros((m, n), dtype=np.uint8)
+
+        for i in trange(m):
+            for j in range(n):
+                r = rnd.gauss(mu=mean, sigma=stddev)
+                new_arr[i][j] = max(0, min(255, self.__arr[i][j] + r))
+        
+        return Timage(array=new_arr)
+
     def __flat_median(self, arr: List[float]) -> float:
         '''Median of unsorted array'''
         '''time: O(n*log(n))'''
