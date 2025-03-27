@@ -51,45 +51,60 @@ class Timage:
 
     @property
     def image(self) -> Image:
-        return self.__img
+        return self.__img.copy()
 
     @property
     def array(self) -> np.ndarray:
-        return self.__arr
+        return self.__arr.copy()
 
     def median_blur(self, radius=3) -> "Timage":
         n, m = self.__img.size
         new_arr = np.zeros((m, n), dtype=np.uint8)
         for i in trange(m):
             for j in range(n):
-                if radius <= i < m - radius and radius <= j < n - radius:
-                    neighs = []
-                    for n_i in range(i - radius, i + radius + 1):
-                        neighs.extend(self.__arr[n_i][j - radius : j + radius + 1])
-                    new_arr[i][j] = self.__flat_median(neighs)
-                else:
-                    new_arr[i][j] = self.__arr[i][j]
+                neighs = []
+
+                for n_i in range(i - radius, i + radius + 1):
+                    if n_i >= m: row = m - n_i - 1
+                    else: row = abs(n_i)
+                    for n_j in range(j - radius, j + radius + 1):
+                        if n_j >= n: col = n - n_j - 1
+                        else: col = abs(n_j)
+
+                        neighs.append(self.__arr[row][col])
+
+                new_arr[i][j] = self.__flat_median(neighs)
 
         return Timage(array=new_arr)
 
     def gaussian_blur(self, blur=1, radius=3) -> "Timage":
-        self_arr = self.__arr
-        new_arr = self.__arr.copy()
+        n, m = self.__img.size
+        self_arr = [[int(self.__arr[i][j]) for j in range(n)] for i in range(m)]
+        new_arr = np.zeros((m, n), dtype=np.uint8)
 
-        G = {}  # Gaussian kernel
+        G = [[0]*n for _ in range(m)]  # Gaussian kernel
         for m in range(-radius, radius + 1):
             for n in range(-radius, radius + 1):
-                G[(m, n)] = exp(-(m**2 + n**2) / (2 * blur**2)) / (2 * pi * blur**2)
+                G[m][n] = exp(-(m**2 + n**2) / (2 * blur**2)) / (2 * pi * blur**2)
+        
+        #kernel normalization
+        div = sum(sum(row) for row in G)
+        G = [[el/div for el in row] for row in G]
 
-        for i in trange(radius, len(new_arr) - radius):
-            for j in range(radius, len(new_arr[0]) - radius):
-                new_arr[i][j] = sum(
-                    sum(
-                        G[(m, n)] * self_arr[i + m][j + n]
-                        for n in range(-radius, radius + 1)
-                    )
-                    for m in range(-radius, radius + 1)
-                )
+        for i in trange(len(new_arr)):
+            for j in range(len(new_arr[0])):
+                value = 0
+
+                for m in range(-radius, radius + 1):
+                    if i + m >= len(self_arr): row = len(self_arr) - (i + m) - 1
+                    else: row = abs(i + m)
+                    for n in range(-radius, radius + 1):
+                        if j + n >= len(self_arr[0]): col = len(self_arr[0]) - (j + n) - 1
+                        else: col = abs(j + n)
+
+                        value += G[m][n] * self_arr[row][col]
+
+                new_arr[i][j] = value
 
         return Timage(array=new_arr)
 
