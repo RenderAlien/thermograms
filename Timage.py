@@ -9,7 +9,7 @@ import numpy as np
 from IPython.display import display
 
 class Timage:
-    def __init__(self, *, image: Image = None, array: np.ndarray = None) -> None:
+    def __init__(self, *, image: Image = None, array: np.ndarray = None, dtype: np.dtype = None) -> None:
         """_summary_
 
         Args:
@@ -19,8 +19,8 @@ class Timage:
         Raises:
             ValueError: Exactly one of 'image' or 'arr' must be provided to initialize Timage.
         """
-        if (image is None and array is None) or (
-            image is not None and array is not None
+        if (image is None == array is None) or (
+            image is None != dtype is None
         ):
             raise ValueError(
                 "Exactly one of 'image' or 'arr' must be provided to initialize Timage."
@@ -28,9 +28,11 @@ class Timage:
         elif image is not None: #Сразу переводим в серый
             self.__img = image.convert("L")
             self.__arr = np.array(self.__img)
+            self.__dtype = dtype
         else:
             self.__img = Image.fromarray(array).convert("L")
             self.__arr = np.array(self.__img)
+            self.__dtype = self.__arr.dtype
 
     def __add__(self, other: "Timage") -> "Timage":
         if self.image.size != other.image.size:
