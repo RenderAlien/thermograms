@@ -19,9 +19,8 @@ class Timage:
         Raises:
             ValueError: Exactly one of 'image' or 'arr' must be provided to initialize Timage.
         """
-        if (image is None == array is None) or (
-            image is None != dtype is None
-        ):
+        if ((image is None) == (array is None)) or (
+            (image is None) != (dtype is None)):
             raise ValueError(
                 "Exactly one of 'image' or 'arr' must be provided to initialize Timage."
             )
@@ -58,10 +57,14 @@ class Timage:
     @property
     def array(self) -> np.ndarray:
         return self.__arr.copy()
+    
+    @property
+    def dtype(self) -> np.dtype:
+        return self.__dtype
 
     def median_blur(self, radius=3) -> "Timage":
         n, m = self.__img.size
-        new_arr = np.zeros((m, n), dtype=np.uint8)
+        new_arr = np.zeros((m, n), dtype=self.dtype)
         for i in trange(m):
             for j in range(n):
                 neighs = []
@@ -81,13 +84,13 @@ class Timage:
 
     def gaussian_blur(self, blur=1, radius=3) -> "Timage":
         n, m = self.__img.size
-        self_arr = [[int(self.__arr[i][j]) for j in range(n)] for i in range(m)]
-        new_arr = np.zeros((m, n), dtype=np.uint8)
+        self_arr = [[float(el) for el in row] for row in self.array]
+        new_arr = np.zeros((m, n), dtype=self.dtype)
 
-        G = [[0]*n for _ in range(m)]  # Gaussian kernel
+        G = [[0]*(2*radius+1) for _ in range(2*radius+1)]  # Gaussian kernel
         for m in range(-radius, radius + 1):
             for n in range(-radius, radius + 1):
-                G[m][n] = exp(-(m**2 + n**2) / (2 * blur**2)) / (2 * pi * blur**2)
+                G[m+radius][n+radius] = exp(-(m**2 + n**2) / (2 * blur**2)) / (2 * pi * blur**2)
         
         #kernel normalization
         div = sum(sum(row) for row in G)
@@ -104,7 +107,7 @@ class Timage:
                         if j + n >= len(self_arr[0]): col = len(self_arr[0]) - (j + n) - 1
                         else: col = abs(j + n)
 
-                        value += G[m][n] * self_arr[row][col]
+                        value += G[m+radius][n+radius] * self_arr[row][col]
 
                 new_arr[i][j] = value
 
@@ -127,11 +130,12 @@ class Timage:
     def gaussian_noise(self, mean=0, stddev=32) -> "Timage":
         n, m = self.__img.size
         new_arr = np.zeros((m, n), dtype=np.uint8)
+        self_arr = [[float(el) for el in row] for row in self.array]
 
         for i in trange(m):
             for j in range(n):
                 r = rnd.gauss(mu=mean, sigma=stddev)
-                new_arr[i][j] = max(0, min(255, self.__arr[i][j] + r))
+                new_arr[i][j] = max(0, min(255, self_arr[i][j] + r))
         
         return Timage(array=new_arr)
 
