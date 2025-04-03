@@ -65,7 +65,7 @@ class Timage:
     def median_blur(self, radius=3) -> "Timage":
         n, m = self.__img.size
         new_arr = np.zeros((m, n), dtype=self.dtype)
-        for i in trange(m):
+        for i in trange(m, desc='Median blur: '):
             for j in range(n):
                 neighs = []
 
@@ -96,7 +96,7 @@ class Timage:
         div = sum(sum(row) for row in G)
         G = [[el/div for el in row] for row in G]
 
-        for i in trange(len(new_arr)):
+        for i in trange(len(new_arr), desc='Gaussian blur: '):
             for j in range(len(new_arr[0])):
                 value = 0
 
@@ -117,7 +117,7 @@ class Timage:
         new_arr = self.__arr.copy()
         n, m = self.__img.size
 
-        for i in range(m):
+        for i in trange(m, desc='SaP noise: '):
             for j in range(n):
                 r = rnd.random()
                 if r <= intensity / 2:
@@ -132,7 +132,7 @@ class Timage:
         new_arr = np.zeros((m, n), dtype=np.uint8)
         self_arr = [[float(el) for el in row] for row in self.array]
 
-        for i in trange(m):
+        for i in trange(m, desc='Gaussian noise: '):
             for j in range(n):
                 r = rnd.gauss(mu=mean, sigma=stddev)
                 new_arr[i][j] = max(0, min(255, self_arr[i][j] + r))
