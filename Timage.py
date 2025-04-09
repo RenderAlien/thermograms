@@ -72,7 +72,7 @@ class Timage:
         G = np.exp(-(x**2 + y**2) / (2 * blur**2)) / (2 * np.pi * blur**2)
         G /= np.sum(G) #kernel normalization
         
-        out = convolve2d(self.__arr, G, mode='same', boundary='symm').astype(np.uint8)
+        out = convolve2d(self.__arr, G, mode='same', boundary='symm').astype(self.dtype)
         return Timage(array=out)
 
     def salt_and_pepper_noise(self, intensity=0.1) -> "Timage":
@@ -87,15 +87,6 @@ class Timage:
         rnd =np.random.normal(mean, stddev, size = self.__arr.shape)
         out = self.__arr + np.minimum(255-self.__arr, rnd)
         return Timage(array=out)
-    
-    def __flat_median(self, arr: List[float]) -> float:
-        '''Median of unsorted array'''
-        '''time: O(n*log(n))'''
-        srtd = sorted(arr)
-        if len(arr)%2==1:
-            return srtd[len(arr)//2]
-        else:
-            return sum(srtd[len(arr)//2-1:len(arr)//2+1])/2
         
 if __name__ == "__main__":
     ...
