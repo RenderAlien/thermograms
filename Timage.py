@@ -1,12 +1,13 @@
+from warnings import deprecated
 from tqdm import trange
 import random as rnd
-from math import exp, pi
 from typing import List
 
 from PIL import Image
 import numpy as np
 
 from IPython.display import display
+from scipy.signal import convolve2d, medfilt2d
 
 class Timage:
     def __init__(self, *, image: Image = None, array: np.ndarray = None) -> None:
@@ -19,6 +20,7 @@ class Timage:
         Raises:
             ValueError: Exactly one of 'image' or 'arr' must be provided to initialize Timage.
         """
+        np.seterr(over='raise') # Сломать всё при переполнении
         if (image is None and array is None) or (
             image is not None and array is not None
         ):
@@ -33,106 +35,54 @@ class Timage:
             self.__arr = np.array(self.__img)
 
     def __add__(self, other: "Timage") -> "Timage":
-        if self.image.size != other.image.size:
+        if self.__arr.shape != other.__arr.shape:
             raise ValueError("Can't add images of different sizes.")
-        n, m = self.image.size
-        self_arr = self.array
-        other_arr = other.array
-        out_arr = np.zeros((m, n), dtype=np.uint8)
-        for i in range(m):
-            for j in range(n):
-                out_arr[i][j] = (self_arr[i][j] + other_arr[i][j]) / 2
-
-        return Timage(array=out_arr)
+        out = self.__arr+other.__arr
+        return Timage(array=out)
     
     def __repr__(self):
         display(self.__img)
         return ""
+    
+    def show(self):
+        self.__img.show()
 
     @property
     def image(self) -> Image:
         return self.__img.copy()
 
+    #TODO удалить
     @property
     def array(self) -> np.ndarray:
         return self.__arr.copy()
 
     def median_blur(self, radius=3) -> "Timage":
-        n, m = self.__img.size
-        new_arr = np.zeros((m, n), dtype=np.uint8)
-        for i in trange(m):
-            for j in range(n):
-                neighs = []
-
-                for n_i in range(i - radius, i + radius + 1):
-                    if n_i >= m: row = m - n_i - 1
-                    else: row = abs(n_i)
-                    for n_j in range(j - radius, j + radius + 1):
-                        if n_j >= n: col = n - n_j - 1
-                        else: col = abs(n_j)
-
-                        neighs.append(self.__arr[row][col])
-
-                new_arr[i][j] = self.__flat_median(neighs)
-
-        return Timage(array=new_arr)
+        # x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
+        out = medfilt2d(self.__arr, radius*2+1)
+        
+        return Timage(array=out)
 
     def gaussian_blur(self, blur=1, radius=3) -> "Timage":
-        n, m = self.__img.size
-        self_arr = [[int(self.__arr[i][j]) for j in range(n)] for i in range(m)]
-        new_arr = np.zeros((m, n), dtype=np.uint8)
-
-        G = [[0]*n for _ in range(m)]  # Gaussian kernel
-        for m in range(-radius, radius + 1):
-            for n in range(-radius, radius + 1):
-                G[m][n] = exp(-(m**2 + n**2) / (2 * blur**2)) / (2 * pi * blur**2)
+        x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
+        G = np.exp(-(x**2 + y**2) / (2 * blur**2)) / (2 * np.pi * blur**2)
+        G /= np.sum(G) #kernel normalization
         
-        #kernel normalization
-        div = sum(sum(row) for row in G)
-        G = [[el/div for el in row] for row in G]
-
-        for i in trange(len(new_arr)):
-            for j in range(len(new_arr[0])):
-                value = 0
-
-                for m in range(-radius, radius + 1):
-                    if i + m >= len(self_arr): row = len(self_arr) - (i + m) - 1
-                    else: row = abs(i + m)
-                    for n in range(-radius, radius + 1):
-                        if j + n >= len(self_arr[0]): col = len(self_arr[0]) - (j + n) - 1
-                        else: col = abs(j + n)
-
-                        value += G[m][n] * self_arr[row][col]
-
-                new_arr[i][j] = value
-
-        return Timage(array=new_arr)
+        out = convolve2d(self.__arr, G, mode='same', boundary='symm').astype(np.uint8)
+        return Timage(array=out)
 
     def salt_and_pepper_noise(self, intensity=0.1) -> "Timage":
-        new_arr = self.__arr.copy()
-        n, m = self.__img.size
+        out = self.__arr.copy()
+        rnd = np.random.random(size=out.shape)
+        out[rnd <= intensity / 2] = 0
+        out[(rnd > intensity / 2) & (rnd <= intensity)] = 255
 
-        for i in range(m):
-            for j in range(n):
-                r = rnd.random()
-                if r <= intensity / 2:
-                    new_arr[i][j] = 0
-                elif r <= intensity:
-                    new_arr[i][j] = 255
-
-        return Timage(array=new_arr)
+        return Timage(array=out)
     
     def gaussian_noise(self, mean=0, stddev=32) -> "Timage":
-        n, m = self.__img.size
-        new_arr = np.zeros((m, n), dtype=np.uint8)
-
-        for i in trange(m):
-            for j in range(n):
-                r = rnd.gauss(mu=mean, sigma=stddev)
-                new_arr[i][j] = max(0, min(255, self.__arr[i][j] + r))
-        
-        return Timage(array=new_arr)
-
+        rnd =np.random.normal(mean, stddev, size = self.__arr.shape)
+        out = self.__arr + np.minimum(255-self.__arr, rnd)
+        return Timage(array=out)
+    
     def __flat_median(self, arr: List[float]) -> float:
         '''Median of unsorted array'''
         '''time: O(n*log(n))'''
@@ -141,3 +91,8 @@ class Timage:
             return srtd[len(arr)//2]
         else:
             return sum(srtd[len(arr)//2-1:len(arr)//2+1])/2
+        
+if __name__ == "__main__":
+    ...
+    
+    
