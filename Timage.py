@@ -10,7 +10,7 @@ from IPython.display import display
 from scipy.signal import convolve2d, medfilt2d
 
 class Timage:
-    def __init__(self, *, image: Image = None, array: np.ndarray = None) -> None:
+    def __init__(self, *, image: Image = None, array: np.ndarray = None, dtype: np.dtype = None) -> None:
         """_summary_
 
         Args:
@@ -21,18 +21,19 @@ class Timage:
             ValueError: Exactly one of 'image' or 'arr' must be provided to initialize Timage.
         """
         np.seterr(over='raise') # Сломать всё при переполнении
-        if (image is None and array is None) or (
-            image is not None and array is not None
-        ):
+        if ((image is None) == (array is None)) or (
+            (image is None) != (dtype is None)):
             raise ValueError(
                 "Exactly one of 'image' or 'arr' must be provided to initialize Timage."
             )
         elif image is not None: #Сразу переводим в серый
             self.__img = image.convert("L")
             self.__arr = np.array(self.__img)
+            self.__dtype = dtype
         else:
             self.__img = Image.fromarray(array).convert("L")
             self.__arr = np.array(self.__img)
+            self.__dtype = self.__arr.dtype
 
     def __add__(self, other: "Timage") -> "Timage":
         if self.__arr.shape != other.__arr.shape:
@@ -55,6 +56,10 @@ class Timage:
     @property
     def array(self) -> np.ndarray:
         return self.__arr.copy()
+    
+    @property
+    def dtype(self) -> np.dtype:
+        return self.__dtype
 
     def median_blur(self, radius=3) -> "Timage":
         # x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
