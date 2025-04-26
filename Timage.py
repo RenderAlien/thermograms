@@ -1,13 +1,15 @@
-from warnings import deprecated
+#from warnings import deprecated
 from tqdm import trange
-import random as rnd
-from typing import List
+#import random as rnd
+#from typing import List
 
 from PIL import Image
 import numpy as np
 
 from IPython.display import display
 from scipy.signal import convolve2d, medfilt2d
+
+from scipy.ndimage import median_filter
 
 class Timage:
     def __init__(self, *, image: Image = None, array: np.ndarray = None, dtype: np.dtype = None) -> None:
@@ -45,8 +47,9 @@ class Timage:
         display(self.__img)
         return ""
     
-    def show(self):
-        self.__img.show()
+    def show(self, pallete: np.array = np.array([0, 1], dtype=np.uint8)):
+        new_arr = np.multiply.outer(self.__arr, pallete[1]) + np.multiply.outer(255-self.__arr, pallete[0])
+        Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
 
     @property
     def image(self) -> Image:
@@ -63,7 +66,7 @@ class Timage:
 
     def median_blur(self, radius=3) -> "Timage":
         # x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
-        out = medfilt2d(self.__arr, radius*2+1)
+        out = median_filter(self.__arr, size=(2*radius+1, 2*radius+1), mode='reflect')
         
         return Timage(array=out)
 
@@ -89,6 +92,8 @@ class Timage:
         return Timage(array=out)
         
 if __name__ == "__main__":
-    ...
-    
-    
+    from math import sin
+    f = lambda i, j: 255*abs(sin(j/125))
+    pixels = np.array([[f(i, j) for j in range(1250)] for i in range(1250)], dtype=np.uint8)
+    t1 = Timage(array=pixels)
+    t1.show(np.array([[100/255, 120/255, 185/255], [219/255, 88/255, 86/255]], dtype=np.float32)) #пастельный синий -> пастельный красный
