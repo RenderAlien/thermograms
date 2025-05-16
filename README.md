@@ -35,10 +35,14 @@ tim = Timage(array = np.array(...))
 
 Timage сам по себе предоставляет набор методов для обработки термограмм. Все методы являются чистыми - то есть не изменяют исходные данные. Ниже описаны основные инструменты работы с Timage
 
-| Метод                                                    | Описание |
-| -------------------------------------------------------- | -------- |
-| `median_blur(radius:int) -> Timage`                      |          |
-| `gaussian_blur(blur:int = 1, radius:int = 3) -> Timage`  |          |
-| `salt_and_pepper_noise(self, intensity:float) -> Timage` |          |
-| `gaussian_noise(self, mean:Int, stddev=32 -> Timage`     |          |
-| `... `                                                   |          |
+| Метод                                                                  | Описание                                                 |
+| ---------------------------------------------------------------------- | -------------------------------------------------------- |
+| `median_blur(radius:int) -> Timage`                                    | Медианный фильтр                                         |
+| `gaussian_blur(blur:int = 1, radius:int = 3) -> Timage`                | Фильтр Гаусса                                            |
+| `salt_and_pepper_noise(self, intensity:float) -> Timage`               | Шум методом соли и перца                                 |
+| `gaussian_noise(self, mean:Int, stddev=32 -> Timage`                   | Шум по Гауссу                                            |
+| `show(self, pallete:List[List[int]], contrast_level: int = 0) -> None` | Отобразить термограмму с заданными палитрой и контрастом |
+
+---
+
+README будет обновлён

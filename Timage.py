@@ -1,5 +1,5 @@
 #from warnings import deprecated
-from tqdm import trange
+#from tqdm import trange
 #import random as rnd
 #from typing import List
 
@@ -47,8 +47,19 @@ class Timage:
         display(self.__img)
         return ""
     
-    def show(self, pallete: np.array = np.array([0, 1], dtype=np.uint8)):
-        new_arr = np.multiply.outer(self.__arr, pallete[1]) + np.multiply.outer(255-self.__arr, pallete[0])
+    def show(self, pallete, contrast_level: int = 0):
+        np_pallete = np.array(pallete, dtype=np.float32)
+
+        mean = np.mean(self.__arr)
+        f = lambda x: (x - mean) / (1 - contrast_level) + mean
+        contrasted = self.__arr.copy()
+
+        m, n = len(self.__arr), len(self.__arr[0])
+        for i in range(m):
+            for j in range(n):
+                contrasted[i][j] = min(255, max(0,   f(float(self.__arr[i][j]))  ))
+            
+        new_arr = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
         Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
 
     @property
@@ -92,8 +103,8 @@ class Timage:
         return Timage(array=out)
         
 if __name__ == "__main__":
-    from math import sin
-    f = lambda i, j: 255*abs(sin(j/125))
+    from math import exp, sin
+    f = lambda i, j: 255*abs(sin((i+j)/125))
     pixels = np.array([[f(i, j) for j in range(1250)] for i in range(1250)], dtype=np.uint8)
     t1 = Timage(array=pixels)
-    t1.show(np.array([[100/255, 120/255, 185/255], [219/255, 88/255, 86/255]], dtype=np.float32)) #пастельный синий -> пастельный красный
+    #t1.show(np.array([[0, 0, 255], [255, 0, 0]], dtype=np.uint8))
