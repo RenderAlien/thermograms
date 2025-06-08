@@ -5,9 +5,13 @@
 
 from PIL import Image
 import numpy as np
+from math import pi
+pi = np.float32(pi)
+from tqdm import trange
 
 from IPython.display import display
-from scipy.signal import convolve2d, medfilt2d
+from scipy.signal import convolve2d
+from math import exp
 
 from scipy.ndimage import median_filter
 
@@ -34,7 +38,7 @@ class Timage:
             self.__dtype = dtype
         else:
             self.__img = Image.fromarray(array).convert("L")
-            self.__arr = np.array(self.__img)
+            self.__arr = array # TODO было np.array(self.__img) изза чего мы теряли мантиссы. сейчас необходимо чтоб входной массив был чб
             self.__dtype = self.__arr.dtype
 
     def __add__(self, other: "Timage") -> "Timage":
@@ -47,7 +51,7 @@ class Timage:
         display(self.__img)
         return ""
     
-    def show(self, pallete, contrast_level: int = 0):
+    def show(self, pallete=[0, 255], contrast_level: int = 0):
         np_pallete = np.array(pallete, dtype=np.float32)
 
         mean = np.mean(self.__arr)
@@ -60,7 +64,9 @@ class Timage:
                 contrasted[i][j] = min(255, max(0,   f(float(self.__arr[i][j]))  ))
             
         new_arr = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
+        #return Image.fromarray(new_arr.astype('uint8')) #for saving
         Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
+        return Image.fromarray(new_arr.astype('uint8'))
 
     @property
     def image(self) -> Image:
@@ -102,9 +108,56 @@ class Timage:
         out = self.__arr + np.minimum(255-self.__arr, rnd)
         return Timage(array=out)
         
-if __name__ == "__main__":
-    from math import exp, sin
-    f = lambda i, j: 255*abs(sin((i+j)/125))
-    pixels = np.array([[f(i, j) for j in range(1250)] for i in range(1250)], dtype=np.uint8)
-    t1 = Timage(array=pixels)
-    #t1.show(np.array([[0, 0, 255], [255, 0, 0]], dtype=np.uint8))
+    def defect_map(self, radius, stddev=1.5, contrast_level=0.997, direction=None, color=255):
+        stddev = np.float32(stddev)
+        kernel = np.zeros((2*radius+1, 2*radius+1, 2), dtype=np.float32) # kernel[i][j] = [real, img] representing z = real + i * img
+        gauss_func = lambda r: np.float32(np.exp(-r**2 / (2*stddev**2)) / (stddev * (2 * pi) ** 0.5))
+
+        # itializing kernel for convolution and sum s for normalization
+        s = np.float32(0)
+        for i in range(-radius, radius + 1):
+            for j in range(-radius, radius + 1):
+                r = (i**2 + j**2)**0.5 # distance from center
+                if r == 0: continue
+                g = gauss_func(r)
+                s += g
+                kernel[radius + i][radius + j][0] = (j / r) * g
+                kernel[radius + i][radius + j][1] = (-i / r) * g # because if i decreasing pixel is upper, but we need to be downer
+        
+        #normalizing kernel
+        kernel /= s
+
+        # convolving self of kernel
+
+        new = np.zeros((len(self.array) - 2*radius, len(self.array[0]) - 2*radius, 2), dtype=np.float32)
+        for i in trange(len(new), desc='Convolving...'):
+            for j in range(len(new[0])):
+
+                region = self.array[i:i+2*radius+1, j:j+2*radius+1]
+                
+                new[i][j] = np.sum(region[..., np.newaxis] * kernel, (0,1))
+            
+        directed = np.zeros((len(self.array) - 2*radius, len(self.array[0]) - 2*radius), dtype=np.float32)
+        if direction is None:
+            for i in range(len(new)):
+                for j in range(len(new[0])):
+                    directed[i][j] = (new[i][j][0]**2 + new[i][j][1]**2)**0.5
+        else:
+            for i in range(len(new)):
+                for j in range(len(new[0])):
+                    directed[i][j] = 128 + np.dot(new[i][j], direction)
+        
+        #contrast
+        mean = np.mean(directed)
+        f = lambda x: (x - mean) / (1 - contrast_level) + mean
+        contrasted = directed.copy()
+
+        m, n = len(directed), len(directed[0])
+        for i in range(m):
+            for j in range(n):
+                contrasted[i][j] = min(255, max(0,   f(float(directed[i][j]))  ))
+        
+        colored = np.multiply.outer(contrasted.copy(), np.array(color, dtype=np.float32)/255)
+        
+        Image.fromarray(colored.astype('uint8')).show()
+        return Image.fromarray(colored.astype('uint8'))
