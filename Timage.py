@@ -108,13 +108,15 @@ class Timage:
         out = self.__arr + np.minimum(255-self.__arr, rnd)
         return Timage(array=out)
         
-    def defect_map(self, radius, stddev=1.5, contrast_level=0.997, direction=None, color=255):
+    def defect_map(self, radius, stddev=1.5, contrast_level=0.997, direction=None, pallete=[0,255]):
 
-        kernel = np.zeros((2*radius+1, 2*radius+1, 2), dtype=np.float32) # kernel[i][j] = [real, img] representing z = real + i * img
+        np_pallete = np.array(pallete, dtype=np.float32) # list -> np.array
+
+        kernel = np.zeros((2*radius+1, 2*radius+1), dtype=np.complex64) # kernel[i][j] is representing z = real + i * img
         gauss_func = lambda r: np.float32(np.exp(-r**2 / (2*stddev**2)) / np.float32(stddev * (2 * pi) ** 0.5))
 
         #
-        # itializing kernel for convolution and sum s for normalization
+        # initializing kernel for convolution and sum s for normalization
         #
 
         s = np.float32(0)
@@ -124,8 +126,7 @@ class Timage:
                 if r == 0: continue # for measuring change around current pixel we dont need current pixel itself
                 g = gauss_func(r)
                 s += g
-                kernel[radius + i][radius + j][0] = (j / r) * g
-                kernel[radius + i][radius + j][1] = (-i / r) * g # because i decreasing pixel is going up, but we need it to go down
+                kernel[radius + i][radius + j] = np.complex64(complex(j / r, -i / r)) * g # because i decreasing pixel is going up, but we need it to go down
         
         #normalizing kernel
         kernel /= s
@@ -134,27 +135,23 @@ class Timage:
         # convolving self of kernel
         #
 
-        d_map = np.zeros((len(self.array) - 2*radius, len(self.array[0]) - 2*radius, 2), dtype=np.float32)
-        for i in trange(len(d_map), desc='Convolving...'):
-            for j in range(len(d_map[0])):
-
-                region = self.array[i:i+2*radius+1, j:j+2*radius+1]
-                
-                d_map[i][j] = np.sum(region[..., np.newaxis] * kernel, (0,1))
+        d_map = convolve2d(self.array, kernel, mode='same', boundary='symm').astype(np.complex64)
         
-        #return d_map # if we want work with DefectMap
+        #return d_map # if we want to work with DefectMap
 
         #
         #replacing matrix of complex numbers with matrix of real numbers using magnitude or direction
         #
         
         if direction is None:
-            directed = np.zeros((len(self.array) - 2*radius, len(self.array[0]) - 2*radius), dtype=np.float32)
+            directed = np.zeros(self.array.shape, dtype=np.float32)
             for i in range(len(d_map)):
                 for j in range(len(d_map[0])):
-                    directed[i][j] = (d_map[i][j][0]**2 + d_map[i][j][1]**2)**0.5
+                    directed[i][j] = np.abs(d_map[i][j])
         else:
-            directed = 128 + np.sum(d_map * direction, (2)) # directed[i][j] = dot_product(d_map[i][j], direction) i.e. float number
+            directed = 128 - np.real(d_map * np.conjugate(direction)) # directed[i][j] = 128 + dot_product(d_map[i][j], direction) i.e. float number
+        # explanation: d_map[i][j] * dir* = (  real(d_map[i][j]) * real(dir) + img(d_map[i][j]) * img(dir)  ) + i * (...)
+        # thus, real(d_map[i][j] * dir*) = dot_product(d_map[i][j], dir) if d_map[i][j] and dir are vectors
         
         #
         #contrast and coloring
@@ -169,7 +166,10 @@ class Timage:
             for j in range(n):
                 contrasted[i][j] = min(255, max(0,   f(float(directed[i][j]))  ))
         
-        colored = np.multiply.outer(contrasted.copy(), np.array(color, dtype=np.float32)/255)
+        colored = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
         
         #Image.fromarray(colored.astype('uint8')).show()
         return Image.fromarray(colored.astype('uint8'))
+
+
+
