@@ -26,6 +26,7 @@ class Timage:
         Raises:
             ValueError: Exactly one of 'image' or 'arr' must be provided to initialize Timage.
         """
+        ###t = time()
         np.seterr(over='raise') # Сломать всё при переполнении
         if ((image is None) == (array is None)) or (
             (image is None) != (dtype is None)):
@@ -41,6 +42,8 @@ class Timage:
             self.__arr = array # TODO было np.array(self.__img) изза чего мы теряли мантиссы. сейчас необходимо чтоб входной массив был чб
             self.__dtype = self.__arr.dtype
 
+        ###print('__init__ ' + str(time()-t))
+
     def __add__(self, other: "Timage") -> "Timage":
         if self.__arr.shape != other.__arr.shape:
             raise ValueError("Can't add images of different sizes.")
@@ -51,17 +54,39 @@ class Timage:
         display(self.__img)
         return ""
     
+    def __getitem__(self, index):
+        coord_type = int|float
+        if not isinstance(index, tuple) or len(index)!=2 or not isinstance(index[0], coord_type) or not isinstance(index[1], coord_type):
+            raise KeyError(
+                "Inappropriate type for coordinates of thermogram"
+            )
+        
+        x, y = index
+
+        int_type = int|None
+        if isinstance(index[0], int_type) and isinstance(index[1], int_type):
+            if 0 <= index[0] < len(self.__arr) and 0 <= index[1] < len(self.__arr[0]):
+                return self.array[index[0]][index[1]]
+            else:
+                return self.dtype.type(0)
+        else: # triple interpolation
+            # x boundaries
+            vx0 = self[int(x), int(y)] + (self[int(x)+1, int(y)] - self[int(x), int(y)]) * (x % 1)
+            vx1 = self[int(x), int(y)+1] + (self[int(x)+1, int(y)+1] - self[int(x), int(y)+1]) * (x % 1)
+            value = vx0 + (vx1 - vx0) * (y % 1)
+            return value
+    
     def show(self, pallete=[0, 255], contrast_level: int = 0):
         np_pallete = np.array(pallete, dtype=np.float32)
 
         mean = np.mean(self.__arr)
         f = lambda x: (x - mean) / (1 - contrast_level) + mean
-        contrasted = self.__arr.copy()
+        
+        f = lambda x: (x - mean) / (1 - contrast_level) + mean
 
-        m, n = len(self.__arr), len(self.__arr[0])
-        for i in range(m):
-            for j in range(n):
-                contrasted[i][j] = min(255, max(0,   f(float(self.__arr[i][j]))  ))
+        contrasted = f(self.__arr)
+        contrasted[contrasted < 0] = 0
+        contrasted[contrasted > 255] = 255
             
         new_arr = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
         #return Image.fromarray(new_arr.astype('uint8')) #for saving
@@ -113,7 +138,7 @@ class Timage:
         np_pallete = np.array(pallete, dtype=np.float32) # list -> np.array
 
         kernel = np.zeros((2*radius+1, 2*radius+1), dtype=np.complex64) # kernel[i][j] is representing z = real + i * img
-        gauss_func = lambda r: np.float32(np.exp(-r**2 / (2*stddev**2)) / np.float32(stddev * (2 * pi) ** 0.5))
+        gauss_func = lambda r: np.exp(-r**2 / (2*stddev**2)) / np.float32(stddev * (2 * pi) ** 0.5)
 
         #
         # initializing kernel for convolution and sum s for normalization
@@ -135,7 +160,7 @@ class Timage:
         # convolving self of kernel
         #
 
-        d_map = convolve2d(self.array, kernel, mode='same', boundary='symm').astype(np.complex64)
+        d_map = convolve2d(self.array, kernel, mode='same', boundary='symm')
         
         #return d_map # if we want to work with DefectMap
 
@@ -144,27 +169,22 @@ class Timage:
         #
         
         if direction is None:
-            directed = np.zeros(self.array.shape, dtype=np.float32)
-            for i in range(len(d_map)):
-                for j in range(len(d_map[0])):
-                    directed[i][j] = np.abs(d_map[i][j])
+            directed = np.abs(d_map) # magnitude of each complex number
         else:
-            directed = 128 - np.real(d_map * np.conjugate(direction)) # directed[i][j] = 128 + dot_product(d_map[i][j], direction) i.e. float number
+            directed = 128 - np.real(d_map * np.conjugate(direction)) # directed[i][j] = 128 - dot_product(d_map[i][j], direction) i.e. float number, idk why '-' instead of '+' TODO
         # explanation: d_map[i][j] * dir* = (  real(d_map[i][j]) * real(dir) + img(d_map[i][j]) * img(dir)  ) + i * (...)
         # thus, real(d_map[i][j] * dir*) = dot_product(d_map[i][j], dir) if d_map[i][j] and dir are vectors
-        
+
         #
         #contrast and coloring
         #
 
         mean = np.mean(directed)
-        f = lambda x: (x - mean) / (1 - contrast_level) + mean
-        contrasted = directed.copy()
+        #f = lambda x: (x - mean) / (1 - contrast_level) + mean
 
-        m, n = len(directed), len(directed[0])
-        for i in range(m):
-            for j in range(n):
-                contrasted[i][j] = min(255, max(0,   f(float(directed[i][j]))  ))
+        contrasted = (directed - mean) / (1 - contrast_level) + mean
+        contrasted[contrasted < 0] = 0
+        contrasted[contrasted > 255] = 255
         
         colored = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
         
