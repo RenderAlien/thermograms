@@ -35,12 +35,12 @@ class Timage:
             )
         elif image is not None: #Сразу переводим в серый
             self.__img = image.convert("L")
-            self.__arr = np.array(self.__img)
+            self.__arr = np.array(self.__img, dtype=dtype)
             self.__dtype = dtype
         else:
             self.__img = Image.fromarray(array).convert("L")
             self.__arr = array # TODO было np.array(self.__img) изза чего мы теряли мантиссы. сейчас необходимо чтоб входной массив был чб
-            self.__dtype = self.__arr.dtype
+            self.__dtype = self.__arr.dtype.type
 
         ###print('__init__ ' + str(time()-t))
 
@@ -55,26 +55,71 @@ class Timage:
         return ""
     
     def __getitem__(self, index):
-        coord_type = int|float
-        if not isinstance(index, tuple) or len(index)!=2 or not isinstance(index[0], coord_type) or not isinstance(index[1], coord_type):
-            raise KeyError(
-                "Inappropriate type for coordinates of thermogram"
-            )
+
+        try:
+            x, y, _type = index
+        except:
+            x, y = index
+            _type = None
         
-        x, y = index
+        coord_type = int|float
+        if _type is None and (  not isinstance(x, coord_type) or not isinstance(y, coord_type)  ):
+            raise KeyError(
+                f"Inappropriate type for coordinates of thermogram, {x, y, _type} cannot be parameters."
+            )
 
         int_type = int|None
-        if isinstance(index[0], int_type) and isinstance(index[1], int_type):
-            if 0 <= index[0] < len(self.__arr) and 0 <= index[1] < len(self.__arr[0]):
-                return self.array[index[0]][index[1]]
+        if _type == 'int' or isinstance(x, int_type) and isinstance(y, int_type):
+            if 0 <= x < len(self.__arr) and 0 <= y < len(self.__arr[0]):
+                return self.__arr[x, y]
             else:
-                return self.dtype.type(0)
-        else: # triple interpolation
-            # x boundaries
-            vx0 = self[int(x), int(y)] + (self[int(x)+1, int(y)] - self[int(x), int(y)]) * (x % 1)
-            vx1 = self[int(x), int(y)+1] + (self[int(x)+1, int(y)+1] - self[int(x), int(y)+1]) * (x % 1)
-            value = vx0 + (vx1 - vx0) * (y % 1)
-            return value
+                return self.dtype(0)
+        else:
+            if -2 <= x < len(self.__arr) and -2 <= y < len(self.__arr[0]): # -2 is for smooth edges
+                return self.__bilinear_interpolate(x, y)
+            else:
+                return self.dtype(0)
+            
+    def __bilinear_interpolate(self, x, y):
+        # https://en.m.wikipedia.org/wiki/Bilinear_interpolation
+        vx0 = self[int(x), int(y), 'int'] + (self[int(x)+1, int(y), 'int'] - self[int(x), int(y), 'int']) * (x % 1)
+        vx1 = self[int(x), int(y)+1, 'int'] + (self[int(x)+1, int(y)+1, 'int'] - self[int(x), int(y)+1, 'int']) * (x % 1)
+        value = vx0 + (vx1 - vx0) * (y % 1)
+        return value
+    
+    def __bicubic_interpolate(self, i, j):
+        # https://en.m.wikipedia.org/wiki/Bicubic_interpolation
+        int_x, int_y = int(i), int(j)
+
+        def f(x, y, der=None):
+            if der is None: return self[int_x+x, int_y+y, 'int']
+            elif der == 'x': return (self[int_x+x+1, int_y+y, 'int'] - self[int_x+x-1, int_y+y, 'int'])/2
+            elif der == 'y': return (self[int_x+x, int_y+y+1, 'int'] - self[int_x+x, int_y+y-1, 'int'])/2
+            elif der == 'xy': return (f(x, y+1, 'x') - f(x, y-1, 'x')) / 2
+
+        a0 = np.array([[1,0,0,0],
+                        [0,0,1,0],
+                        [-3,3,-2,-1],
+                        [2,-2,1,1]], dtype=self.dtype)
+        a1 = np.array([[f(0,0), f(0,1), f(0,0,'y'), f(0,1,'y')],
+                       [f(1,0), f(1,1), f(1,0,'y'), f(1,1,'y')],
+                       [f(0,0,'x'), f(0,1,'x'), f(0,0,'xy'), f(0,1,'xy')],
+                       [f(1,0,'x'), f(1,1,'x'), f(1,0,'xy'), f(1,1,'xy')]], dtype=self.dtype)
+        a2 = np.array([[1,0,-3,2],
+                       [0,0,3,-2],
+                       [0,1,-2,1],
+                       [0,0,-1,1]], dtype=self.dtype)
+        
+        A = a0 @ a1 @ a2
+
+        i -= int_x
+        j -= int_y
+
+        a0 = np.array([1, i, i**2, i**3], dtype=self.dtype)
+        a2 = np.array([[1],[j],[j**2],[j**3]], dtype=self.dtype)
+
+        p = a0 @ A @ a2
+        return p[0]
     
     def show(self, pallete=[0, 255], contrast_level: int = 0):
         np_pallete = np.array(pallete, dtype=np.float32)
@@ -90,14 +135,13 @@ class Timage:
             
         new_arr = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
         #return Image.fromarray(new_arr.astype('uint8')) #for saving
-        Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
+        #Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
         return Image.fromarray(new_arr.astype('uint8'))
 
     @property
     def image(self) -> Image:
         return self.__img.copy()
 
-    #TODO удалить
     @property
     def array(self) -> np.ndarray:
         return self.__arr.copy()
