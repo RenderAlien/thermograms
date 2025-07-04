@@ -56,9 +56,9 @@ class Timage:
     
     def __getitem__(self, index):
 
-        try:
+        if len(index) == 3:
             x, y, _type = index
-        except:
+        elif len(index) == 2:
             x, y = index
             _type = None
         
@@ -75,7 +75,7 @@ class Timage:
             else:
                 return self.dtype(0)
         else:
-            if -2 <= x < len(self.__arr) and -2 <= y < len(self.__arr[0]): # -2 is for smooth edges
+            if -3 <= x < len(self.__arr)+3 and -3 <= y < len(self.__arr[0])+3: # -2 and +2 are for smooth edges
                 return self.__bilinear_interpolate(x, y)
             else:
                 return self.dtype(0)
@@ -124,7 +124,7 @@ class Timage:
     def show(self, pallete=[0, 255], contrast_level: int = 0):
         np_pallete = np.array(pallete, dtype=np.float32)
 
-        mean = np.mean(self.__arr)
+        mean = np.mean(self.__arr[self.__arr > 0]) # [self.__arr > 0] is to avoid overlighting picture because of zeros
         f = lambda x: (x - mean) / (1 - contrast_level) + mean
         
         f = lambda x: (x - mean) / (1 - contrast_level) + mean
@@ -235,5 +235,13 @@ class Timage:
         #Image.fromarray(colored.astype('uint8')).show()
         return Image.fromarray(colored.astype('uint8'))
 
+    def resized(self, shape):
+        new = np.zeros(shape, dtype=self.dtype)
+        ki = (self.__arr.shape[0] - 1) / (shape[0] - 1)
+        kj = (self.__arr.shape[1] - 1) / (shape[1] - 1)
 
-
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                new[i,j] = self[i*ki, j*kj]
+        
+        return Timage(array=new)
