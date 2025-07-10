@@ -5,8 +5,8 @@
 
 from PIL import Image
 import numpy as np
-from math import pi
-pi = np.float32(pi)
+from math import pi, acos, cos, sin
+np_pi = np.float32(pi)
 from tqdm import trange
 
 from IPython.display import display
@@ -62,20 +62,18 @@ class Timage:
             x, y = index
             _type = None
         
-        coord_type = int|float
-        if _type is None and (  not isinstance(x, coord_type) or not isinstance(y, coord_type)  ):
+        if _type is None and (  not isinstance(x, int|float) or not isinstance(y, int|float)  ):
             raise KeyError(
                 f"Inappropriate type for coordinates of thermogram, {x, y, _type} cannot be parameters."
             )
 
-        int_type = int|None
-        if _type == 'int' or isinstance(x, int_type) and isinstance(y, int_type):
+        if _type == 'int' or isinstance(x, int) and isinstance(y, int):
             if 0 <= x < len(self.__arr) and 0 <= y < len(self.__arr[0]):
                 return self.__arr[x, y]
             else:
                 return self.dtype(0)
         else:
-            if -3 <= x < len(self.__arr)+3 and -3 <= y < len(self.__arr[0])+3: # -2 and +2 are for smooth edges
+            if 0 <= x < len(self.__arr) and 0 <= y < len(self.__arr[0]):
                 return self.__bilinear_interpolate(x, y)
             else:
                 return self.dtype(0)
@@ -121,22 +119,35 @@ class Timage:
         p = a0 @ A @ a2
         return p[0]
     
+    def __bififthpower_interpolate(self, i, j):
+        int_i, int_j = int(i), int(j)
+        J = np.array([[jk**k for k in range(6)] for jk in range(-2, 4)], dtype=self.dtype)
+        T = np.array([[self[ii, jj, 'int'] for jj in range(int_j-2, int_j+4)] for ii in range(int_i-2, int_i+4)], dtype=self.dtype)
+        A_i = np.linalg.inv(J) @ T
+        J_x = np.array([(j-int_j)**k for k in range(6)], dtype=self.dtype)
+        T_x = J_x @ A_i
+        I = np.array([[ii**k for k in range(6)] for ii in range(-2, 4)], dtype=self.dtype)
+        A_jx = np.linalg.inv(I) @ np.array([[T_x[jj]] for jj in range(6)])
+        I_x = np.array([(i-int_i)**k for k in range(6)], dtype=self.dtype)
+
+        t_xx = I_x @ A_jx
+        return t_xx[0]
+    
     def show(self, pallete=[0, 255], contrast_level: int = 0):
         np_pallete = np.array(pallete, dtype=np.float32)
 
         mean = np.mean(self.__arr[self.__arr > 0]) # [self.__arr > 0] is to avoid overlighting picture because of zeros
-        f = lambda x: (x - mean) / (1 - contrast_level) + mean
-        
         f = lambda x: (x - mean) / (1 - contrast_level) + mean
 
         contrasted = f(self.__arr)
         contrasted[contrasted < 0] = 0
         contrasted[contrasted > 255] = 255
             
-        new_arr = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
+        colored = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
+        colored[self.__arr == 0] = self.dtype(0) if np_pallete[0].shape==() else np.zeros(np_pallete[0].shape, dtype=self.dtype)
         #return Image.fromarray(new_arr.astype('uint8')) #for saving
         #Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
-        return Image.fromarray(new_arr.astype('uint8'))
+        return Image.fromarray(colored.astype('uint8'))
 
     @property
     def image(self) -> Image:
@@ -182,7 +193,7 @@ class Timage:
         np_pallete = np.array(pallete, dtype=np.float32) # list -> np.array
 
         kernel = np.zeros((2*radius+1, 2*radius+1), dtype=np.complex64) # kernel[i][j] is representing z = real + i * img
-        gauss_func = lambda r: np.exp(-r**2 / (2*stddev**2)) / np.float32(stddev * (2 * pi) ** 0.5)
+        gauss_func = lambda r: np.exp(-r**2 / (2*stddev**2)) / np.float32(stddev * (2 * np_pi) ** 0.5)
 
         #
         # initializing kernel for convolution and sum s for normalization
@@ -245,3 +256,78 @@ class Timage:
                 new[i,j] = self[i*ki, j*kj]
         
         return Timage(array=new)
+    
+    def rotated(self, angle, degrees=False):
+        if degrees:
+            angle *= pi/180
+        angle %= 2*pi
+        
+        #new_size = max(self.__arr.shape) * 3 // 2 # TODO
+
+        new = np.zeros(self.__arr.shape, dtype=self.dtype)
+
+        center = (new.shape[0] / 2, new.shape[1]/2)
+        self_center = (self.__arr.shape[0] / 2, self.__arr.shape[1] / 2)
+
+        def f(x, y):
+            r = (x**2 + y**2) ** 0.5
+            if r == 0: phi = 0
+            elif y >= 0:
+                phi = acos(x / r)
+            else:
+                phi = 2*pi - acos(x / r)
+            self_i = self_center[0] + r * cos(phi - angle)
+            self_j = self_center[1] + r * sin(phi - angle)
+            return (self_i, self_j, 'fl')
+
+        for i in trange(new.shape[0]):
+            for j in range(new.shape[1]):
+                x = i - center[0]
+                y = j - center[1]
+                new[i,j] = self[f(x, y)]
+        
+        return Timage(array=new)
+    
+    def distorted(self, ki, shape=None, scale=None):
+        if shape is None and scale is None:
+            shape = self.__arr.shape
+        elif scale is not None:
+            shape = (  int(self.__arr.shape[0]*scale), int(self.__arr.shape[1]*scale)  )
+        new = np.zeros(shape, dtype=self.dtype)
+
+        new_center = (shape[0]/2, shape[1]/2)
+
+        for i in trange(len(new)):
+            for j in range(len(new)):
+                new[(i, j)] = self[self.__distort(i, j, new_center, ki)]
+        
+        return Timage(array=new)
+
+    
+
+    def __distort(self, i, j, distorted_center, ki): # Brown-Conrady's even-order polynomial model
+        i /= distorted_center[0]
+        j /= distorted_center[1]
+
+        r = (  (i-1)**2 + (j-1)**2  )**0.5
+        
+        k = sum(  ki[i] * r**(2*i) for i in range(len(ki))  )
+        if k < 0: return (float('inf'), float('inf'), 'fl')
+
+        i_undistorted = self.__arr.shape[0] / 2 + (i-1) * k * distorted_center[0] # self.__arr.shape[0] / 2 == undistorted_center[0]
+        j_undistorted = self.__arr.shape[1] / 2 + (j-1) * k * distorted_center[1]
+        return (i_undistorted, j_undistorted, 'fl')
+        
+
+    
+    #def f(x, y, undistorted_center, distorted_center, ki, scale): # Brown-Conrady's even-order polynomial model
+    #x /= undistorted_center[0]
+    #y /= undistorted_center[1]
+#
+    #r = (  (x - 1)**2 + (y - 1)**2  ) ** 0.5 / scale
+    #k = sum(ki[i] * (r ** (2*i)) for i in range(len(ki)))
+    ##if k < 0: return (float('inf'), float('inf'), 'fl')
+#
+    #x_distorted = distorted_center[0] + (x - 1) * k * undistorted_center[0]
+    #y_distorted = distorted_center[1] + (y - 1) * k * undistorted_center[1]
+    #return (x_distorted, y_distorted, 'fl')
