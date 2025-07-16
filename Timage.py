@@ -15,6 +15,8 @@ from math import exp
 
 from scipy.ndimage import median_filter
 
+CAM_KI = [1, -0.0000015, 4.8*0.000001**2] # coefficients for camera distortion correction
+
 class Timage:
     def __init__(self, *, image: Image = None, array: np.ndarray = None, dtype: np.dtype = None) -> None:
         """_summary_
@@ -56,9 +58,14 @@ class Timage:
     
     def __getitem__(self, index):
 
+        if isinstance(index, slice):
+            return Timage(array=self.array[index])
+
         if len(index) == 3:
             x, y, _type = index
         elif len(index) == 2:
+            if isinstance(index[0], slice) and isinstance(index[1], slice): 
+                return Timage(array=self.array[index])
             x, y = index
             _type = None
         
@@ -119,21 +126,21 @@ class Timage:
         p = a0 @ A @ a2
         return p[0]
     
-    def __bififthpower_interpolate(self, i, j):
-        int_i, int_j = int(i), int(j)
-        J = np.array([[jk**k for k in range(6)] for jk in range(-2, 4)], dtype=self.dtype)
-        T = np.array([[self[ii, jj, 'int'] for jj in range(int_j-2, int_j+4)] for ii in range(int_i-2, int_i+4)], dtype=self.dtype)
-        A_i = np.linalg.inv(J) @ T
-        J_x = np.array([(j-int_j)**k for k in range(6)], dtype=self.dtype)
-        T_x = J_x @ A_i
-        I = np.array([[ii**k for k in range(6)] for ii in range(-2, 4)], dtype=self.dtype)
-        A_jx = np.linalg.inv(I) @ np.array([[T_x[jj]] for jj in range(6)])
-        I_x = np.array([(i-int_i)**k for k in range(6)], dtype=self.dtype)
-
-        t_xx = I_x @ A_jx
-        return t_xx[0]
+    #def __bififthpower_interpolate(self, i, j):
+    #    int_i, int_j = int(i), int(j)
+    #    J = np.array([[jk**k for k in range(6)] for jk in range(-2, 4)], dtype=self.dtype)
+    #    T = np.array([[self[ii, jj, 'int'] for jj in range(int_j-2, int_j+4)] for ii in range(int_i-2, int_i+4)], dtype=self.dtype)
+    #    A_i = np.linalg.inv(J) @ T
+    #    J_x = np.array([(j-int_j)**k for k in range(6)], dtype=self.dtype)
+    #    T_x = J_x @ A_i
+    #    I = np.array([[ii**k for k in range(6)] for ii in range(-2, 4)], dtype=self.dtype)
+    #    A_jx = np.linalg.inv(I) @ np.array([[T_x[jj]] for jj in range(6)])
+    #    I_x = np.array([(i-int_i)**k for k in range(6)], dtype=self.dtype)
+#
+    #    t_xx = I_x @ A_jx
+    #    return t_xx[0]
     
-    def show(self, pallete=[0, 255], contrast_level: int = 0):
+    def show(self, pallete=[[0,0,0],[255,255,255]], contrast_level: int = 0):
         np_pallete = np.array(pallete, dtype=np.float32)
 
         mean = np.mean(self.__arr[self.__arr > 0]) # [self.__arr > 0] is to avoid overlighting picture because of zeros
@@ -145,7 +152,6 @@ class Timage:
             
         colored = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
         colored[self.__arr == 0] = self.dtype(0) if np_pallete[0].shape==() else np.zeros(np_pallete[0].shape, dtype=self.dtype)
-        #return Image.fromarray(new_arr.astype('uint8')) #for saving
         #Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
         return Image.fromarray(colored.astype('uint8'))
 
@@ -188,7 +194,7 @@ class Timage:
         out = self.__arr + np.minimum(255-self.__arr, rnd)
         return Timage(array=out)
         
-    def defect_map(self, radius, stddev=1.5, contrast_level=0.997, direction=None, pallete=[0,255]):
+    def defect_map(self, radius, stddev=1.5, contrast_level=0.997, direction=None, pallete=[[0,0,0],[255,255,255]]):
 
         np_pallete = np.array(pallete, dtype=np.float32) # list -> np.array
 
@@ -297,8 +303,8 @@ class Timage:
 
         new_center = (shape[0]/2, shape[1]/2)
 
-        for i in trange(len(new)):
-            for j in range(len(new)):
+        for i in range(shape[0]):
+            for j in range(shape[1]):
                 new[(i, j)] = self[self.__distort(i, j, new_center, ki)]
         
         return Timage(array=new)
@@ -306,28 +312,13 @@ class Timage:
     
 
     def __distort(self, i, j, distorted_center, ki): # Brown-Conrady's even-order polynomial model
-        i /= distorted_center[0]
-        j /= distorted_center[1]
 
-        r = (  (i-1)**2 + (j-1)**2  )**0.5
+        r = (  (i-distorted_center[0])**2 + (j-distorted_center[1])**2  )**0.5
         
-        k = sum(  ki[i] * r**(2*i) for i in range(len(ki))  )
+        k = sum(  ki[_] * r**(2*_) for _ in range(len(ki))  )
         if k < 0: return (float('inf'), float('inf'), 'fl')
 
-        i_undistorted = self.__arr.shape[0] / 2 + (i-1) * k * distorted_center[0] # self.__arr.shape[0] / 2 == undistorted_center[0]
-        j_undistorted = self.__arr.shape[1] / 2 + (j-1) * k * distorted_center[1]
+        i_undistorted = self.__arr.shape[0] / 2 + (i-distorted_center[0]) * k # self.__arr.shape[0] / 2 == undistorted_center[0]
+        j_undistorted = self.__arr.shape[1] / 2 + (j-distorted_center[1]) * k
         return (i_undistorted, j_undistorted, 'fl')
-        
-
     
-    #def f(x, y, undistorted_center, distorted_center, ki, scale): # Brown-Conrady's even-order polynomial model
-    #x /= undistorted_center[0]
-    #y /= undistorted_center[1]
-#
-    #r = (  (x - 1)**2 + (y - 1)**2  ) ** 0.5 / scale
-    #k = sum(ki[i] * (r ** (2*i)) for i in range(len(ki)))
-    ##if k < 0: return (float('inf'), float('inf'), 'fl')
-#
-    #x_distorted = distorted_center[0] + (x - 1) * k * undistorted_center[0]
-    #y_distorted = distorted_center[1] + (y - 1) * k * undistorted_center[1]
-    #return (x_distorted, y_distorted, 'fl')
