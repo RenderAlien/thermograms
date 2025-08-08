@@ -1,21 +1,37 @@
 #from warnings import deprecated
-#from tqdm import trange
 #import random as rnd
 #from typing import List
 
 from PIL import Image
 import numpy as np
 from math import pi, acos, cos, sin
-np_pi = np.float32(pi)
 from tqdm import trange
-
 from IPython.display import display
 from scipy.signal import convolve2d
-from math import exp
+from scipy.ndimage import median_filter, map_coordinates
+from cv2 import findHomography
+np_pi = np.float32(pi)
 
-from scipy.ndimage import median_filter
 
-CAM_KI = [1, -0.0000015, 4.8*0.000001**2] # coefficients for camera distortion correction
+# coefficients for camera distortion correction
+#CAM_K = [1, -0.0000015, 4.8*0.000001**2] 
+CAM_K = np.array([1, 0, -0.0000013, 0, 3.3*0.000001**2], dtype=np.float64)
+
+
+
+def merge(t1: "Timage", t2: "Timage", vertical=True):
+    if vertical:
+        return Timage(array=np.append(t1.array, t2.array, axis=0))
+    else:
+        return Timage(array=np.append(t1.array, t2.array, axis=1))
+
+
+
+def __get_timage(n, file):
+    arr = np.array([[file['A'][j][i][n] for j in range(len(file['A']))] for i in range(len(file['A']))], dtype=np.float32)
+    return Timage(array=arr)
+    
+
 
 class Timage:
     def __init__(self, *, image: Image = None, array: np.ndarray = None, dtype: np.dtype = None) -> None:
@@ -43,12 +59,13 @@ class Timage:
             self.__img = Image.fromarray(array).convert("L")
             self.__arr = array # TODO было np.array(self.__img) изза чего мы теряли мантиссы. сейчас необходимо чтоб входной массив был чб
             self.__dtype = self.__arr.dtype.type
+        self.shape = self.__arr.shape
 
         ###print('__init__ ' + str(time()-t))
 
     def __add__(self, other: "Timage") -> "Timage":
-        if self.__arr.shape != other.__arr.shape:
-            raise ValueError("Can't add images of different sizes.")
+        if self.shape != other.shape:
+            raise ValueError("Can't add images of different shapes.")
         out = self.__arr+other.__arr
         return Timage(array=out)
     
@@ -57,14 +74,14 @@ class Timage:
         return ""
     
     def __getitem__(self, index):
-
-        if isinstance(index, slice):
+        
+        if isinstance(index, slice|int):
             return Timage(array=self.array[index])
 
         if len(index) == 3:
             x, y, _type = index
         elif len(index) == 2:
-            if isinstance(index[0], slice) and isinstance(index[1], slice): 
+            if isinstance(index[0], slice) or isinstance(index[1], slice): 
                 return Timage(array=self.array[index])
             x, y = index
             _type = None
@@ -75,12 +92,12 @@ class Timage:
             )
 
         if _type == 'int' or isinstance(x, int) and isinstance(y, int):
-            if 0 <= x < len(self.__arr) and 0 <= y < len(self.__arr[0]):
+            if 0 <= x < self.shape[0] and 0 <= y < self.shape[1]:
                 return self.__arr[x, y]
             else:
                 return self.dtype(0)
         else:
-            if 0 <= x < len(self.__arr) and 0 <= y < len(self.__arr[0]):
+            if 0 <= x < self.shape[0] and 0 <= y < self.shape[1]:
                 return self.__bilinear_interpolate(x, y)
             else:
                 return self.dtype(0)
@@ -126,20 +143,6 @@ class Timage:
         p = a0 @ A @ a2
         return p[0]
     
-    #def __bififthpower_interpolate(self, i, j):
-    #    int_i, int_j = int(i), int(j)
-    #    J = np.array([[jk**k for k in range(6)] for jk in range(-2, 4)], dtype=self.dtype)
-    #    T = np.array([[self[ii, jj, 'int'] for jj in range(int_j-2, int_j+4)] for ii in range(int_i-2, int_i+4)], dtype=self.dtype)
-    #    A_i = np.linalg.inv(J) @ T
-    #    J_x = np.array([(j-int_j)**k for k in range(6)], dtype=self.dtype)
-    #    T_x = J_x @ A_i
-    #    I = np.array([[ii**k for k in range(6)] for ii in range(-2, 4)], dtype=self.dtype)
-    #    A_jx = np.linalg.inv(I) @ np.array([[T_x[jj]] for jj in range(6)])
-    #    I_x = np.array([(i-int_i)**k for k in range(6)], dtype=self.dtype)
-#
-    #    t_xx = I_x @ A_jx
-    #    return t_xx[0]
-    
     def show(self, pallete=[[0,0,0],[255,255,255]], contrast_level: int = 0):
         np_pallete = np.array(pallete, dtype=np.float32)
 
@@ -182,19 +185,19 @@ class Timage:
         return Timage(array=out)
 
     def salt_and_pepper_noise(self, intensity=0.1) -> "Timage":
-        out = self.__arr.copy()
-        rnd = np.random.random(size=out.shape)
+        out = self.array
+        rnd = np.random.random(size=self.shape)
         out[rnd <= intensity / 2] = 0
         out[(rnd > intensity / 2) & (rnd <= intensity)] = 255
 
         return Timage(array=out)
     
     def gaussian_noise(self, mean=0, stddev=32) -> "Timage":
-        rnd =np.random.normal(mean, stddev, size = self.__arr.shape)
+        rnd =np.random.normal(mean, stddev, size = self.shape)
         out = self.__arr + np.minimum(255-self.__arr, rnd)
         return Timage(array=out)
         
-    def defect_map(self, radius, stddev=1.5, contrast_level=0.997, direction=None, pallete=[[0,0,0],[255,255,255]]):
+    def defect_map(self, radius=4, stddev=1.5, contrast_level=0.997, direction=None, pallete=[[0,0,0],[255,255,255]]):
 
         np_pallete = np.array(pallete, dtype=np.float32) # list -> np.array
 
@@ -236,6 +239,8 @@ class Timage:
         # explanation: d_map[i][j] * dir* = (  real(d_map[i][j]) * real(dir) + img(d_map[i][j]) * img(dir)  ) + i * (...)
         # thus, real(d_map[i][j] * dir*) = dot_product(d_map[i][j], dir) if d_map[i][j] and dir are vectors
 
+        #return 255 * directed / np.max(directed)
+
         #
         #contrast and coloring
         #
@@ -254,8 +259,8 @@ class Timage:
 
     def resized(self, shape):
         new = np.zeros(shape, dtype=self.dtype)
-        ki = (self.__arr.shape[0] - 1) / (shape[0] - 1)
-        kj = (self.__arr.shape[1] - 1) / (shape[1] - 1)
+        ki = (self.shape[0] - 1) / (shape[0] - 1)
+        kj = (self.shape[1] - 1) / (shape[1] - 1)
 
         for i in range(shape[0]):
             for j in range(shape[1]):
@@ -265,15 +270,23 @@ class Timage:
     
     def rotated(self, angle, degrees=False):
         if degrees:
+            angle %= 360
+            if angle % 90 == 0:
+                if angle < 0: angle += 360
+                if angle == 0: return Timage(array=self.array)
+                elif angle == 90: return Timage(array=self.array.T[::-1])
+                elif angle == 180: return Timage(array=self.array[::-1, ::-1])
+                elif angle == 270: return Timage(array=self.array[::-1].T)
             angle *= pi/180
-        angle %= 2*pi
+        else:
+            angle %= 2*pi
         
         #new_size = max(self.__arr.shape) * 3 // 2 # TODO
 
-        new = np.zeros(self.__arr.shape, dtype=self.dtype)
+        new = np.zeros(self.shape, dtype=self.dtype)
 
         center = (new.shape[0] / 2, new.shape[1]/2)
-        self_center = (self.__arr.shape[0] / 2, self.__arr.shape[1] / 2)
+        self_center = (self.shape[0] / 2, self.shape[1] / 2)
 
         def f(x, y):
             r = (x**2 + y**2) ** 0.5
@@ -286,7 +299,7 @@ class Timage:
             self_j = self_center[1] + r * sin(phi - angle)
             return (self_i, self_j, 'fl')
 
-        for i in trange(new.shape[0]):
+        for i in range(new.shape[0]):
             for j in range(new.shape[1]):
                 x = i - center[0]
                 y = j - center[1]
@@ -294,31 +307,138 @@ class Timage:
         
         return Timage(array=new)
     
-    def distorted(self, ki, shape=None, scale=None):
+    #def distorted(self, K, shape=None, scale=None):
+    #    if shape is None and scale is None:
+    #        shape = self.shape
+    #    elif scale is not None:
+    #        shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
+    #    new = np.zeros(shape, dtype=self.dtype)
+#
+    #    new_center = np.array(shape, dtype=np.float64)/2
+    #    undistorted_center = np.array(self.shape, dtype=np.float64)/2
+    #    K = np.array(K, dtype=np.float64)
+#
+    #    for i in np.arange(shape[0], dtype=np.int16):
+    #        for j in np.arange(shape[1], dtype=np.int16):
+    #            new[i, j] = self[self.__distort(i, j, new_center, undistorted_center, K)]
+    #    
+    #    return Timage(array=new)
+    
+    def distorted(self, K, shape=None, scale=None):
+        if shape is None and scale is None:
+            shape = self.shape
+        elif scale is not None:
+            shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
+
+        distorted_center = np.array(shape, dtype=np.float64) / 2
+        undistorted_center = np.array(self.shape, dtype=np.float64) / 2
+        K = np.array(K, dtype=np.float64)
+
+        # coordinate mesh
+        i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
+        distorted_coordinates = np.stack([i_arr, j_arr], axis=-1)
+
+        # vector to current pixel from center
+        d = distorted_coordinates - distorted_center
+
+        # distance to current pixel
+        r = np.sqrt(np.sum(d**2, axis=-1))
+
+        mult = np.polynomial.polynomial.polyval(r, K)
+
+        interp_coordinates = undistorted_center + d * mult[..., np.newaxis]
+
+        interp_i = interp_coordinates[..., 0]
+        interp_j = interp_coordinates[..., 1]
+        flat_interp_coordinates = np.array([interp_i.ravel(), interp_j.ravel()])
+
+        flat_distorted = map_coordinates(
+            self.__arr, 
+            flat_interp_coordinates,
+            order=1, #bilinear interpolation
+            mode = 'constant',
+            cval=0.0 # 0.0 is beyond self.__arr
+        )
+        distorted = flat_distorted.reshape(shape).astype(self.dtype)
+        return Timage(array=distorted)
+        
+    def lin_transform(self, T, shape=None, scale=None):
         if shape is None and scale is None:
             shape = self.__arr.shape
         elif scale is not None:
             shape = (  int(self.__arr.shape[0]*scale), int(self.__arr.shape[1]*scale)  )
         new = np.zeros(shape, dtype=self.dtype)
 
-        new_center = (shape[0]/2, shape[1]/2)
+        inv_T = np.linalg.inv(T)
 
         for i in range(shape[0]):
             for j in range(shape[1]):
-                new[(i, j)] = self[self.__distort(i, j, new_center, ki)]
+                x = j - shape[1] / 2
+                y = -i + shape[0] / 2
+
+                r = [[x],
+                     [y]]
+                
+                undistorted_r = inv_T @ r
+                undistorted_x, undistorted_y = undistorted_r[0][0], undistorted_r[1][0]
+                undistorted_i = self.__arr.shape[0]/2 - undistorted_y
+                undistorted_j = self.__arr.shape[0]/2 + undistorted_x
+                new[i,j] = self[undistorted_i, undistorted_j, 'fl']
         
         return Timage(array=new)
-
     
-
-    def __distort(self, i, j, distorted_center, ki): # Brown-Conrady's even-order polynomial model
-
-        r = (  (i-distorted_center[0])**2 + (j-distorted_center[1])**2  )**0.5
+    def homography_transform(self, src_points, dst_points, shape=None, scale=None):
+        # [[x'], [y'], [1]] = H * [[x], [y], [1]]
+        if shape is None and scale is None:
+            shape = self.shape
+        elif scale is not None:
+            shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
+        src_points, dst_points = np.array(src_points, dtype=np.float64), np.array(dst_points, dtype=np.float64)
+        H = np.linalg.inv(findHomography(srcPoints=src_points, dstPoints=dst_points)[0])
         
-        k = sum(  ki[_] * r**(2*_) for _ in range(len(ki))  )
-        if k < 0: return (float('inf'), float('inf'), 'fl')
+        # coordinate mesh
+        i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
+        coordinates = np.array([i_arr.ravel(), j_arr.ravel(), np.ones(((shape[0]*shape[1])))])
 
-        i_undistorted = self.__arr.shape[0] / 2 + (i-distorted_center[0]) * k # self.__arr.shape[0] / 2 == undistorted_center[0]
-        j_undistorted = self.__arr.shape[1] / 2 + (j-distorted_center[1]) * k
-        return (i_undistorted, j_undistorted, 'fl')
+        transformed_coords_with_w = H @ coordinates
+        transformed_coords = np.array([transformed_coords_with_w[0] / transformed_coords_with_w[2], transformed_coords_with_w[1] / transformed_coords_with_w[2]])
+
+        flat_transformed = map_coordinates(
+            self.__arr, 
+            transformed_coords,
+            order=1, #bilinear interpolation
+            mode = 'constant',
+            cval=0.0 # 0.0 is beyond self.__arr
+        )
+        transformed = flat_transformed.reshape(shape).astype(self.dtype)
+        return Timage(array=transformed)
+        
+                
+
     
+
+    def __distort(self, i, j, distorted_center, undistorted_center, K): # Brown-Conrady's even-order polynomial model
+        distorted_coords = [i, j]
+
+        r = np.sqrt(np.sum(  (distorted_center - distorted_coords)**2  )) # distance from center
+        
+        mult = np.polynomial.polynomial.polyval(r, K) # K[0] + K[1] * r**1 + K[2] * r**2 + ... 
+        if mult < 0: return (float('inf'), float('inf'), 'fl')
+
+        undistorted_coords = undistorted_center + (distorted_coords - distorted_center) * mult
+
+        return (float(undistorted_coords[0]), float(undistorted_coords[1]), 'fl')
+
+
+#class Tseries:
+#    def __init__(self, *, path=None, file=None, series=None):
+#        if not file:
+#            self.file = loadmat(path)
+#        else:
+#            self.file = file
+#        self.series = defaultdict(lambda i: __get_timage(i, self.file))
+#
+#    def __getitem__(self, index):
+#
+#        if isinstance(index, slice):
+#            return 
