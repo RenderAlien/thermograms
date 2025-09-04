@@ -18,19 +18,18 @@ np_pi = np.float32(pi)
 CAM_K = np.array([1, 0, -0.0000013, 0, 3.3*0.000001**2], dtype=np.float64)
 
 
+# .._PALETTE[256] не используется и может быть любым значением, но необходима для случая, когда self.__arr[i, j] == 255.0
+
+WB_PALETTE = np.mgrid[:257, :3][0] 
+
+IRON_PALETTE = np.array([[0, 0, 0],[1, 0, 2],[2, 0, 5],[3, 0, 7],[5, 0, 10],[6, 0, 12],[7, 0, 15],[8, 0, 17],[10, 0, 20],[11, 0, 22],[12, 0, 25],[13, 0, 27],[15, 0, 30],[16, 0, 32],[17, 0, 35],[18, 0, 37],[20, 0, 40],[21, 0, 42],[22, 0, 45],[23, 0, 47],[25, 0, 50],[26, 0, 52],[27, 0, 55],[28, 0, 57],[30, 0, 60],[31, 0, 62],[32, 0, 65],[33, 0, 67],[35, 0, 70],[36, 0, 72],[37, 0, 75],[38, 0, 77],[40, 0, 80],[41, 0, 82],[42, 0, 85],[43, 0, 87],[45, 0, 90],[46, 0, 92],[47, 0, 95],[48, 0, 97],[50, 0, 100],[51, 0, 102],[52, 0, 105],[53, 0, 107],[55, 0, 110],[56, 0, 112],[57, 0, 115],[58, 0, 117],[60, 0, 120],[61, 0, 122],[62, 0, 125],[63, 0, 127],[65, 0, 126],[67, 0, 121],[69, 0, 115],[71, 0, 110],[73, 0, 104],[75, 0, 99],[77, 0, 93],[79, 0, 88],[81, 0, 82],[83, 0, 77],[85, 0, 71],[87, 0, 66],[89, 0, 60],[91, 0, 55],[93, 0, 49],[95, 0, 44],[97, 0, 38],[99, 0, 33],[101, 0, 27],[103, 0, 22],[105, 0, 16],[107, 0, 11],[109, 0, 5],[111, 0, 0],[113, 0, 0],[115, 0, 0],[117, 0, 0],[119, 0, 0],[121, 0, 0],[123, 0, 0],[125, 0, 0],[127, 0, 0],[130, 0, 0],[132, 0, 0],[134, 0, 0],[136, 0, 0],[138, 0, 0],[140, 0, 0],[142, 0, 0],[144, 0, 0],[146, 0, 0],[148, 0, 0],[150, 0, 0],[152, 0, 0],[154, 0, 0],[156, 0, 0],[158, 0, 0],[160, 0, 0],[162, 0, 0],[164, 0, 0],[166, 0, 0],[168, 0, 0],[170, 0, 0],[172, 0, 0],[174, 0, 0],[176, 0, 0],[178, 0, 0],[180, 0, 0],[182, 0, 0],[184, 0, 0],[186, 0, 0],[188, 0, 0],[190, 0, 0],[192, 0, 0],[194, 2, 0],[196, 5, 0],[198, 7, 0],[200, 10, 0],[202, 12, 0],[204, 15, 0],[206, 17, 0],[208, 20, 0],[210, 22, 0],[212, 25, 0],[214, 27, 0],[216, 30, 0],[218, 32, 0],[220, 35, 0],[222, 37, 0],[224, 40, 0],[226, 42, 0],[228, 45, 0],[230, 47, 0],[232, 50, 0],[234, 52, 0],[236, 55, 0],[238, 57, 0],[240, 60, 0],[242, 62, 0],[244, 65, 0],[246, 67, 0],[248, 70, 0],[250, 72, 0],[252, 75, 0],[254, 77, 0],[255, 80, 0],[255, 83, 0],[255, 86, 0],[255, 89, 0],[255, 92, 0],[255, 95, 0],[255, 98, 0],[255, 101, 0],[255, 104, 0],[255, 107, 0],[255, 110, 0],[255, 113, 0],[255, 116, 0],[255, 119, 0],[255, 122, 0],[255, 125, 0],[255, 128, 0],[255, 131, 0],[255, 134, 0],[255, 137, 0],[255, 140, 0],[255, 143, 0],[255, 146, 0],[255, 149, 0],[255, 152, 0],[255, 155, 0],[255, 158, 0],[255, 161, 0],[255, 164, 0],[255, 167, 0],[255, 170, 0],[255, 173, 0],[255, 176, 0],[255, 179, 0],[255, 182, 0],[255, 185, 0],[255, 188, 0],[255, 191, 0],[255, 194, 0],[255, 197, 0],[255, 200, 0],[255, 203, 0],[255, 206, 0],[255, 209, 0],[255, 212, 0],[255, 215, 0],[255, 218, 0],[255, 221, 0],[255, 224, 0],[255, 227, 0],[255, 230, 0],[255, 233, 0],[255, 236, 0],[255, 239, 0],[255, 242, 0],[255, 245, 0],[255, 248, 0],[255, 251, 0],[255, 254, 0],[255, 255, 5],[255, 255, 10],[255, 255, 15],[255, 255, 20],[255, 255, 25],[255, 255, 30],[255, 255, 35],[255, 255, 40],[255, 255, 45],[255, 255, 50],[255, 255, 55],[255, 255, 60],[255, 255, 65],[255, 255, 70],[255, 255, 75],[255, 255, 80],[255, 255, 85],[255, 255, 90],[255, 255, 95],[255, 255, 100],[255, 255, 105],[255, 255, 110],[255, 255, 115],[255, 255, 120],[255, 255, 125],[255, 255, 130],[255, 255, 135],[255, 255, 140],[255, 255, 145],[255, 255, 150],[255, 255, 155],[255, 255, 160],[255, 255, 165],[255, 255, 170],[255, 255, 175],[255, 255, 180],[255, 255, 185],[255, 255, 190],[255, 255, 195],[255, 255, 200],[255, 255, 205],[255, 255, 210],[255, 255, 215],[255, 255, 220],[255, 255, 225],[255, 255, 230],[255, 255, 235],[255, 255, 240],[255, 255, 245],[255, 255, 250],[255,255,255]])
+
 
 def merge(t1: "Timage", t2: "Timage", vertical=True):
     if vertical:
         return Timage(array=np.append(t1.array, t2.array, axis=0))
     else:
         return Timage(array=np.append(t1.array, t2.array, axis=1))
-
-
-
-def __get_timage(n, file):
-    arr = np.array([[file['A'][j][i][n] for j in range(len(file['A']))] for i in range(len(file['A']))], dtype=np.float32)
-    return Timage(array=arr)
-    
 
 
 class Timage:
@@ -68,6 +67,24 @@ class Timage:
             raise ValueError("Can't add images of different shapes.")
         out = self.__arr+other.__arr
         return Timage(array=out)
+    
+    def __sub__(self, other: "Timage") -> "Timage":
+        new = self.array - other.array
+        if np.min(new) < 0: new -= np.min(new) # TODO подумать, стоит ли ставить условие или вычитать минимум всегда
+        new[new>255] = 255
+        return Timage(array=new)
+    
+    def __rsub__(self, other: "Timage") -> "Timage":
+        return other.__sub__(self)
+    
+    def __truediv__(self, other: int | float) -> "Timage":
+        return Timage(array=self.array / other)
+    
+    def __mul__(self, other: int | float) -> "Timage":
+        return Timage(array=self.array * other)
+    
+    def __rmul__(self, other: int | float) -> "Timage":
+        return self.__mul__(other)
     
     def __repr__(self):
         display(self.__img)
@@ -143,9 +160,7 @@ class Timage:
         p = a0 @ A @ a2
         return p[0]
     
-    def show(self, pallete=[[0,0,0],[255,255,255]], contrast_level: int = 0):
-        np_pallete = np.array(pallete, dtype=np.float32)
-
+    def show(self, palette=WB_PALETTE, contrast_level: int = 0) -> Image.Image:
         mean = np.mean(self.__arr[self.__arr > 0]) # [self.__arr > 0] is to avoid overlighting picture because of zeros
         f = lambda x: (x - mean) / (1 - contrast_level) + mean
 
@@ -153,9 +168,16 @@ class Timage:
         contrasted[contrasted < 0] = 0
         contrasted[contrasted > 255] = 255
             
-        colored = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
-        colored[self.__arr == 0] = self.dtype(0) if np_pallete[0].shape==() else np.zeros(np_pallete[0].shape, dtype=self.dtype)
-        #Image.fromarray(new_arr.astype('uint8')).show() # Pillow can only generate images from uint8 and uint16 arrays, thats why astype('uint8') is necessary
+        # linear interpolation
+        low_contrasted = np.floor(contrasted).astype('uint8')
+        weights = contrasted - low_contrasted
+
+        low_colored = np.take(palette, low_contrasted, axis=0) # low_colored[i,j] = palette[low_contrasted[i,j]]
+        diff_colored = np.take(palette, low_contrasted+1, axis=0) - low_colored
+
+        colored = low_colored + weights[..., None] * diff_colored
+
+        
         return Image.fromarray(colored.astype('uint8'))
 
     @property
@@ -197,9 +219,9 @@ class Timage:
         out = self.__arr + np.minimum(255-self.__arr, rnd)
         return Timage(array=out)
         
-    def defect_map(self, radius=4, stddev=1.5, contrast_level=0.997, direction=None, pallete=[[0,0,0],[255,255,255]]):
+    def defect_map(self, radius=4, stddev=1.5, contrast_level=0.997, direction=None, palette=WB_PALETTE):
 
-        np_pallete = np.array(pallete, dtype=np.float32) # list -> np.array
+        if not isinstance(palette, np.ndarray): palette = np.array(palette, dtype=np.float32)
 
         kernel = np.zeros((2*radius+1, 2*radius+1), dtype=np.complex64) # kernel[i][j] is representing z = real + i * img
         gauss_func = lambda r: np.exp(-r**2 / (2*stddev**2)) / np.float32(stddev * (2 * np_pi) ** 0.5)
@@ -252,7 +274,14 @@ class Timage:
         contrasted[contrasted < 0] = 0
         contrasted[contrasted > 255] = 255
         
-        colored = np.multiply.outer(contrasted, np_pallete[1]/255) + np.multiply.outer(255-contrasted, np_pallete[0]/255)
+        # linear interpolation
+        low_contrasted = np.floor(contrasted).astype('uint8')
+        weights = contrasted - low_contrasted
+
+        low_colored = np.take(palette, low_contrasted, axis=0) # low_colored[i,j] = palette[low_contrasted[i,j]]
+        diff_colored = np.take(palette, low_contrasted+1, axis=0) - low_colored
+
+        colored = low_colored + weights[..., None] * diff_colored
         
         #Image.fromarray(colored.astype('uint8')).show()
         return Image.fromarray(colored.astype('uint8'))
@@ -307,23 +336,6 @@ class Timage:
         
         return Timage(array=new)
     
-    #def distorted(self, K, shape=None, scale=None):
-    #    if shape is None and scale is None:
-    #        shape = self.shape
-    #    elif scale is not None:
-    #        shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
-    #    new = np.zeros(shape, dtype=self.dtype)
-#
-    #    new_center = np.array(shape, dtype=np.float64)/2
-    #    undistorted_center = np.array(self.shape, dtype=np.float64)/2
-    #    K = np.array(K, dtype=np.float64)
-#
-    #    for i in np.arange(shape[0], dtype=np.int16):
-    #        for j in np.arange(shape[1], dtype=np.int16):
-    #            new[i, j] = self[self.__distort(i, j, new_center, undistorted_center, K)]
-    #    
-    #    return Timage(array=new)
-    
     def distorted(self, K, shape=None, scale=None):
         if shape is None and scale is None:
             shape = self.shape
@@ -356,7 +368,6 @@ class Timage:
             self.__arr, 
             flat_interp_coordinates,
             order=1, #bilinear interpolation
-            mode = 'constant',
             cval=0.0 # 0.0 is beyond self.__arr
         )
         distorted = flat_distorted.reshape(shape).astype(self.dtype)
@@ -412,33 +423,3 @@ class Timage:
         )
         transformed = flat_transformed.reshape(shape).astype(self.dtype)
         return Timage(array=transformed)
-        
-                
-
-    
-
-    def __distort(self, i, j, distorted_center, undistorted_center, K): # Brown-Conrady's even-order polynomial model
-        distorted_coords = [i, j]
-
-        r = np.sqrt(np.sum(  (distorted_center - distorted_coords)**2  )) # distance from center
-        
-        mult = np.polynomial.polynomial.polyval(r, K) # K[0] + K[1] * r**1 + K[2] * r**2 + ... 
-        if mult < 0: return (float('inf'), float('inf'), 'fl')
-
-        undistorted_coords = undistorted_center + (distorted_coords - distorted_center) * mult
-
-        return (float(undistorted_coords[0]), float(undistorted_coords[1]), 'fl')
-
-
-#class Tseries:
-#    def __init__(self, *, path=None, file=None, series=None):
-#        if not file:
-#            self.file = loadmat(path)
-#        else:
-#            self.file = file
-#        self.series = defaultdict(lambda i: __get_timage(i, self.file))
-#
-#    def __getitem__(self, index):
-#
-#        if isinstance(index, slice):
-#            return 
