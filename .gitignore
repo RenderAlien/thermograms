@@ -1,7 +1,7 @@
 __pycache__
 255sin((ij))2
-resources/mat_files
-resources/fs_files
+resources
+cam_k_search
 .vscode
 env
 results
