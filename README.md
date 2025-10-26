@@ -22,7 +22,7 @@
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/your-username/thermograms.git
+git clone https://github.com/RenderAlien/thermograms.git
 cd thermograms
 
 # Создайте виртуальное окружение
