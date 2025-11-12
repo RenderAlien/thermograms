@@ -248,7 +248,7 @@ class Timage:
 
     def gaussian_blur(self, stddev=1, radius=3, circle=True) -> "Timage":
         x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
-        G = np.exp(-(x**2 + y**2) / (2 * stddev**2)) / (2 * np.pi * stddev**2)
+        G = np.exp(-(x**2 + y**2) / (2 * stddev**2)) / ((2 * np.pi)**0.5 * stddev)
         if circle: G[x**2 + y**2 > radius**2] = 0
         G /= np.sum(G) #kernel normalization
         
