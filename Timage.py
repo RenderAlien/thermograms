@@ -247,13 +247,28 @@ class Timage:
         return Timage(array=out)
 
     def gaussian_blur(self, stddev=1, radius=3, circle=True) -> "Timage":
-        x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
+        x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1)) # gaussian kernel initialization
         G = np.exp(-(x**2 + y**2) / (2 * stddev**2)) / ((2 * np.pi)**0.5 * stddev)
         if circle: G[x**2 + y**2 > radius**2] = 0
         G /= np.sum(G) #kernel normalization
         
         out = convolve2d(self.__arr, G, mode='same', boundary='symm').astype(self.dtype)
         return Timage(array=out)
+    
+    def sharpness(self, radius=3, stddev=1) -> "Timage":
+        new = np.zeros(shape=self.__arr.shape, dtype=self.__arr.dtype)
+
+        x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1)) # gaussian kernel initialization
+        G = np.exp(-(x**2 + y**2) / (2 * stddev**2)) / ((2 * np.pi)**0.5 * stddev)
+
+        G /= np.sum(G) #kernel normalization
+
+        G *= -1
+        G[radius, radius] += 2
+
+        new = convolve2d(self.__arr, G, mode='same', boundary='symm')
+
+        return Timage(array=np.clip(new, 0., 255.))
 
     def salt_and_pepper_noise(self, intensity=0.1) -> "Timage":
         out = self.array
