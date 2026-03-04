@@ -5,6 +5,8 @@ from tqdm import trange
 from scipy.signal import convolve2d
 from typing import Tuple
 import cv2
+from os.path import splitext
+from scipy.io import savemat
 
 
 
@@ -198,6 +200,15 @@ class Tseries:
             new[:, :, i] = flat_transformed.reshape(shape).astype(self.dtype)
 
         return Tseries(array=new)
+
+    def save(self, path):
+        filename, extension = splitext(path)
+        if extension == '.npy':
+            np.save(path, self.__arr)
+        elif extension == '.mat':
+            savemat(path, {'data': self.__arr})
+        else:
+            raise ValueError('inappropriate file extension')
 
     def _otsu(self, arr, bins = 1000):
         if len(arr.shape) != 2:

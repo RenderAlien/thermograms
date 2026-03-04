@@ -5,6 +5,9 @@ from tqdm import trange
 from scipy.signal import convolve2d
 from typing import Tuple
 import cv2
+from os.path import splitext
+from scipy.io import savemat
+from sklearn.decomposition import PCA
 
 
 
@@ -214,6 +217,22 @@ class Tseries:
             new[:, :, i] = flat_transformed.reshape(shape).astype(self.dtype)
 
         return Tseries(array=new)
+
+    def save(self, path):
+        filename, extension = splitext(path)
+        if extension == '.npy':
+            np.save(path, self.__arr)
+        elif extension == '.mat':
+            savemat(path, {'data': self.__arr})
+        else:
+            raise ValueError('Inappropriate file extension')
+        
+    def fft(self) -> np.ndarray:
+        return np.fft.fft(self.__arr, axis=2)
+
+    def pca(self, n_components=4) -> np.ndarray:
+        pca_model = PCA(n_components=n_components).fit(self.__arr.reshape(-1, self.shape[2]).T)
+        return pca_model.components_.T.reshape(*self.shape[:2], -1)
 
     def _otsu(self, arr, bins = 1000):
         if len(arr.shape) != 2:

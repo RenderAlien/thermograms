@@ -7,7 +7,7 @@ import numpy as np
 from math import pi, acos, cos, sin
 from tqdm import trange
 from IPython.display import display
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 from scipy.signal import convolve2d
 from scipy.ndimage import median_filter, map_coordinates
 import cv2
@@ -487,3 +487,27 @@ class Timage:
         )
         transformed = flat_transformed.reshape(shape).astype(self.dtype)
         return Timage(array=transformed)
+    
+    def diapason_transform(self, in_diapason, out_diapason):
+        in_start, in_end = in_diapason
+        out_start, out_end = out_diapason
+        res = np.zeros(shape=self.shape, dtype=self.dtype)
+
+        left_mask = self.__arr<=in_start
+        res[left_mask] = (self.__arr[left_mask] - self.__arr.min()) / (in_start - self.__arr.min()) * out_start
+
+        mid_mask = (in_start<self.__arr)&(self.__arr<=in_end)
+        res[mid_mask] = (self.__arr[mid_mask] - in_start) / (in_end - in_start) * (out_end - out_start) + out_start
+
+        right_mask = in_end<self.__arr
+        res[right_mask] = (self.__arr[right_mask] - in_end) / (self.__arr.max() - in_end) * (1 - out_end) + out_end
+        return Timage(array=res)
+    
+    def save(self, path):
+        filename, extension = splitext(path)
+        if extension == '.npy':
+            np.save(path, self.__arr)
+        elif extension == '.mat':
+            savemat(path, {'data': self.__arr})
+        else:
+            raise ValueError('Inappropriate file extension')
