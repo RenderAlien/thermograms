@@ -1,7 +1,3 @@
-#from warnings import deprecated
-#import random as rnd
-#from typing import List
-
 from PIL import Image
 import numpy as np
 from math import pi, acos, cos, sin
@@ -12,16 +8,15 @@ from scipy.signal import convolve2d
 from scipy.ndimage import median_filter, map_coordinates
 import cv2
 from os.path import splitext
+import matplotlib.pyplot as plt
 np_pi = np.float32(pi)
 
 
 # coefficients for camera distortion correction
-#CAM_K = [1, -0.0000015, 4.8*0.000001**2] 
 CAM_K = np.array([1, 0, -1e-07*(13245) /1000, 0, (32382)*1e-13 /1000], dtype=np.float64)
 
 
 # .._PALETTE[256] не используется и может быть любым значением, но необходима для случая, когда self.__arr[i, j] == 255.0
-
 WB_PALETTE = np.mgrid[:257, :3][0] 
 
 IRON_PALETTE = np.array(
@@ -53,15 +48,12 @@ def read_ravi(path: str) -> np.ndarray:
         video[:,:,k] = frame[1:, :]  # Ignore the first row.
     
     cap.release()
-    # read hdr outside the loop as it is repeated before each frame
-    #hdrraw = frame[0, :]
-    #hdr = parseHdr(hdrraw)
-
-    #return hdr, video
+    
     return video.astype('float64')
 
 
 def loadfile(path: str) -> dict | np.ndarray:
+    """Load *.ravi, *.mat, *.npy files"""
     filename, extension = splitext(path)
     if extension == '.ravi':
         return (read_ravi(path) + 8192) / 32
@@ -74,6 +66,7 @@ def loadfile(path: str) -> dict | np.ndarray:
 
 
 def merge(t1: "Timage", t2: "Timage", vertical=True) -> "Timage":
+    # Merge two thermograms
     if vertical:
         return Timage(array=np.append(t1.array, t2.array, axis=0))
     else:
@@ -134,7 +127,7 @@ class Timage:
     def __rmul__(self, other: int | float) -> "Timage":
         return self.__mul__(other)
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         display(self.__img)
         return ""
     
@@ -167,48 +160,15 @@ class Timage:
             else:
                 return self.dtype(0)
             
-    def __bilinear_interpolate(self, x, y):
+    def __bilinear_interpolate(self, x, y) -> np.floating:
         # https://en.m.wikipedia.org/wiki/Bilinear_interpolation
         vx0 = self[int(x), int(y), 'int'] + (self[int(x)+1, int(y), 'int'] - self[int(x), int(y), 'int']) * (x % 1)
         vx1 = self[int(x), int(y)+1, 'int'] + (self[int(x)+1, int(y)+1, 'int'] - self[int(x), int(y)+1, 'int']) * (x % 1)
         value = vx0 + (vx1 - vx0) * (y % 1)
         return value
     
-    def __bicubic_interpolate(self, i, j):
-        # https://en.m.wikipedia.org/wiki/Bicubic_interpolation
-        int_x, int_y = int(i), int(j)
-
-        def f(x, y, der=None):
-            if der is None: return self[int_x+x, int_y+y, 'int']
-            elif der == 'x': return (self[int_x+x+1, int_y+y, 'int'] - self[int_x+x-1, int_y+y, 'int'])/2
-            elif der == 'y': return (self[int_x+x, int_y+y+1, 'int'] - self[int_x+x, int_y+y-1, 'int'])/2
-            elif der == 'xy': return (f(x, y+1, 'x') - f(x, y-1, 'x')) / 2
-
-        a0 = np.array([[1,0,0,0],
-                        [0,0,1,0],
-                        [-3,3,-2,-1],
-                        [2,-2,1,1]], dtype=self.dtype)
-        a1 = np.array([[f(0,0), f(0,1), f(0,0,'y'), f(0,1,'y')],
-                       [f(1,0), f(1,1), f(1,0,'y'), f(1,1,'y')],
-                       [f(0,0,'x'), f(0,1,'x'), f(0,0,'xy'), f(0,1,'xy')],
-                       [f(1,0,'x'), f(1,1,'x'), f(1,0,'xy'), f(1,1,'xy')]], dtype=self.dtype)
-        a2 = np.array([[1,0,-3,2],
-                       [0,0,3,-2],
-                       [0,1,-2,1],
-                       [0,0,-1,1]], dtype=self.dtype)
-        
-        A = a0 @ a1 @ a2
-
-        i -= int_x
-        j -= int_y
-
-        a0 = np.array([1, i, i**2, i**3], dtype=self.dtype)
-        a2 = np.array([[1],[j],[j**2],[j**3]], dtype=self.dtype)
-
-        p = a0 @ A @ a2
-        return p[0]
-    
     def show(self, palette=WB_PALETTE, contrast_level: int = 0) -> Image.Image:
+        """Show thermogram"""
         mean = np.mean(self.__arr[self.__arr > 0]) # [self.__arr > 0] is to avoid overlighting picture because of zeros
         f = lambda x: (x - mean) / (1 - contrast_level) + mean
 
@@ -241,12 +201,14 @@ class Timage:
         return self.__dtype
 
     def median_blur(self, radius=3) -> "Timage":
+        """Apply a median filter"""
         # x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
         out = median_filter(self.__arr, size=(2*radius+1, 2*radius+1), mode='reflect')
         
         return Timage(array=out)
 
     def gaussian_blur(self, stddev=1, radius=3, circle=True) -> "Timage":
+        """Apply a gaussian filter"""
         x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1)) # gaussian kernel initialization
         G = np.exp(-(x**2 + y**2) / (2 * stddev**2)) / ((2 * np.pi)**0.5 * stddev)
         if circle: G[x**2 + y**2 > radius**2] = 0
@@ -256,6 +218,7 @@ class Timage:
         return Timage(array=out)
     
     def sharpness(self, radius=3, stddev=1) -> "Timage":
+        """Increase sharpness"""
         new = np.zeros(shape=self.__arr.shape, dtype=self.__arr.dtype)
 
         x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1)) # gaussian kernel initialization
@@ -271,6 +234,7 @@ class Timage:
         return Timage(array=np.clip(new, 0., 255.))
 
     def salt_and_pepper_noise(self, intensity=0.1) -> "Timage":
+        """Add noise consisting of 0 and 255"""
         out = self.array
         rnd = np.random.random(size=self.shape)
         out[rnd <= intensity / 2] = 0
@@ -279,11 +243,13 @@ class Timage:
         return Timage(array=out)
     
     def gaussian_noise(self, mean=0, stddev=32) -> "Timage":
+        """Add gaussian noise"""
         rnd =np.random.normal(mean, stddev, size = self.shape)
         out = self.__arr + np.minimum(255-self.__arr, rnd)
         return Timage(array=out)
         
-    def defect_map(self, radius=4, stddev=1.5, contrast_level=0.997, direction=None, palette=WB_PALETTE):
+    def detect_edges(self, radius=4, stddev=1.5, contrast_level=0.997, direction=None, palette=WB_PALETTE) -> Image.Image:
+        """Detect edges with complex filters"""
 
         if not isinstance(palette, np.ndarray): palette = np.array(palette, dtype=np.float32)
 
@@ -350,7 +316,8 @@ class Timage:
         #Image.fromarray(colored.astype('uint8')).show()
         return Image.fromarray(colored.astype('uint8'))
 
-    def resized(self, shape):
+    def resized(self, shape) -> "Timage":
+        """Resize thermogram"""
         new = np.zeros(shape, dtype=self.dtype)
         ki = (self.shape[0] - 1) / (shape[0] - 1)
         kj = (self.shape[1] - 1) / (shape[1] - 1)
@@ -361,7 +328,8 @@ class Timage:
         
         return Timage(array=new)
     
-    def rotated(self, angle, degrees=False):
+    def rotated(self, angle, degrees=False) -> "Timage":
+        """Rotate thermogram"""
         if degrees:
             angle %= 360
             if angle % 90 == 0:
@@ -400,7 +368,8 @@ class Timage:
         
         return Timage(array=new)
     
-    def distorted(self, K, shape=None, scale=None):
+    def distorted(self, K, shape=None, scale=None) -> "Timage":
+        """Distort thermogram via coefficients K"""
         if shape is None and scale is None:
             shape = self.shape
         elif scale is not None:
@@ -437,7 +406,8 @@ class Timage:
         distorted = flat_distorted.reshape(shape).astype(self.dtype)
         return Timage(array=distorted)
         
-    def lin_transform(self, T, shape=None, scale=None):
+    def lin_transform(self, T, shape=None, scale=None) -> "Timage":
+        """Apply linear transformation"""
         if shape is None and scale is None:
             shape = self.__arr.shape
         elif scale is not None:
@@ -462,7 +432,8 @@ class Timage:
         
         return Timage(array=new)
     
-    def homography_transform(self, src_points, dst_points, shape=None, scale=None):
+    def homography_transform(self, src_points, dst_points, shape=None, scale=None) -> "Timage":
+        """Apply affine transformation"""
         # [[x'], [y'], [1]] = H * [[x], [y], [1]]
         if shape is None and scale is None:
             shape = self.shape
@@ -488,7 +459,9 @@ class Timage:
         transformed = flat_transformed.reshape(shape).astype(self.dtype)
         return Timage(array=transformed)
     
-    def diapason_transform(self, in_diapason, out_diapason):
+    def diapason_transform(self, in_diapason, out_diapason) -> "Timage":
+        """Apply linear diapason transformation
+        out diapason values must be in (0;1)"""
         in_start, in_end = in_diapason
         out_start, out_end = out_diapason
         res = np.zeros(shape=self.shape, dtype=self.dtype)
@@ -503,7 +476,8 @@ class Timage:
         res[right_mask] = (self.__arr[right_mask] - in_end) / (self.__arr.max() - in_end) * (1 - out_end) + out_end
         return Timage(array=res)
     
-    def save(self, path):
+    def save(self, path) -> None:
+        """Save Timage"""
         filename, extension = splitext(path)
         if extension == '.npy':
             np.save(path, self.__arr)
@@ -511,3 +485,10 @@ class Timage:
             savemat(path, {'data': self.__arr})
         else:
             raise ValueError('Inappropriate file extension')
+        
+    def imshow(self, title=None, figsize=(12, 12), frameon=False, colorbar=False) -> None:
+        plt.figure(figsize=figsize, frameon=frameon)
+        plt.axis('off')
+        if title: plt.title(title)
+        plt.imshow(self.__arr)
+        if colorbar: plt.colorbar()

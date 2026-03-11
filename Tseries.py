@@ -12,7 +12,7 @@ from sklearn.decomposition import PCA
 
 
 class Tseries:
-    def __init__(self, *, path: str = None, array: np.ndarray = None):
+    def __init__(self, *, path: str = None, array: np.ndarray = None) -> None:
         if array is not None:
             self.__arr = array.copy()
         elif path is not None:
@@ -21,9 +21,6 @@ class Tseries:
             raise ValueError('Path to .npy file or array must be provided to initialize Tseries')
         self.shape = self.__arr.shape
         self.dtype = self.__arr.dtype
-
-    def save(self, path) -> None:
-        np.save(path, self.__arr)
     
     @property
     def array(self) -> np.ndarray:
@@ -54,6 +51,7 @@ class Tseries:
             return Tseries(array=self.__arr[index])
     
     def heating_point(self, epsilon: float = 0.1) -> int:
+        """Find idx where the heating starts"""
         avg = np.average(self.__arr, axis=(0,1))
         for i in range(len(avg)-1):
             if avg[i+1] - avg[i] > epsilon:
@@ -67,6 +65,7 @@ class Tseries:
         return int(np.where(avg == np.max(avg))[0][0])
     
     def distorted(self, K, shape=None, scale=None) -> "Tseries":
+        """Distort thermograms via coefficients K"""
         if shape is None and scale is None:
             shape = self.shape[:2]
         elif scale is not None:
@@ -109,6 +108,7 @@ class Tseries:
         return Tseries(array=distorted)
 
     def gaussian_blur(self, stddev=1, radius=3, circle = True) -> "Tseries":
+        """Apply a gaussian filter"""
         x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1))
         G = np.exp(-(x**2 + y**2) / (2 * stddev**2)) / ((2 * np.pi)**0.5 * stddev)
         if circle: G[x**2 + y**2 > radius**2] = 0
@@ -122,6 +122,7 @@ class Tseries:
         return Tseries(array=new_arr)
     
     def median_blur(self, radius=3) -> "Tseries":
+        """Apply a median filter"""
         new_arr = np.zeros(shape=self.shape, dtype=self.dtype)
         
         for i in trange(new_arr.shape[2]):
@@ -130,6 +131,7 @@ class Tseries:
         return Tseries(array=new_arr)
     
     def sharpness(self, radius=3, stddev=1) -> "Tseries":
+        """Increase sharpness"""
         new = np.zeros(shape=self.__arr.shape, dtype=self.__arr.dtype)
 
         x, y = np.meshgrid(np.arange(-radius, radius + 1), np.arange(-radius, radius + 1)) # gaussian kernel initialization
@@ -146,7 +148,7 @@ class Tseries:
         return Tseries(array=np.clip(new, 0., 255.))
 
     def std_map(self, nd: str | Tuple[int] = 'avg', binarization: str | float = 'otsu') -> np.ndarray:
-        '''This method normalizes and returns 2d array of stddevs: map[i, j] = sum( (norm[i,j,tau] - nd of tau)**2 ) or its binarized version'''
+        """This method normalizes and returns 2d array of stddevs: map[i, j] = sum( (norm[i,j,tau] - nd of tau)**2 ) or its binarized version"""
         tser = Tseries(array=self.array[:, :, self.heating_point(): ])
         tau_m = tser.maxima()
 
@@ -188,6 +190,7 @@ class Tseries:
         return Tseries(array=new)
     
     def homography_transform(self, src_points, dst_points, shape=None, scale=None):
+        """Apply affine transformation"""
         # [[x'], [y'], [1]] = H * [[x], [y], [1]]
         if shape is None and scale is None:
             shape = self.shape[:2]
@@ -219,6 +222,7 @@ class Tseries:
         return Tseries(array=new)
 
     def save(self, path):
+        """Save Tseries"""
         filename, extension = splitext(path)
         if extension == '.npy':
             np.save(path, self.__arr)
@@ -228,13 +232,16 @@ class Tseries:
             raise ValueError('Inappropriate file extension')
         
     def fft(self) -> np.ndarray:
+        """Fast Fourier transformation"""
         return np.fft.fft(self.__arr, axis=2)
 
     def pca(self, n_components=4) -> np.ndarray:
+        """Principal component analysis"""
         pca_model = PCA(n_components=n_components).fit(self.__arr.reshape(-1, self.shape[2]).T)
         return pca_model.components_.T.reshape(*self.shape[:2], -1)
 
     def _otsu(self, arr, bins = 1000):
+        """Otsu binarization"""
         if len(arr.shape) != 2:
             raise ValueError(f"Array must be 2D matrix but not {len(arr.shape)}D")
 
