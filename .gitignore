@@ -1,14 +1,18 @@
 __pycache__
-resources
-cam_k_search
 .vscode
+
+
+resources
 results
 temp_results
 temp
+
 venv
-syntesis/US
-syntesis/Xray
-syntesis/y
-syntesis/Композит
-syntesis/Лопасти для синтеза
-syntesis/Модель
+
+cam_k_search
+syntesis
+
+main.ipynb
+model.ipynb
+Timage.py
+Tseries.py
