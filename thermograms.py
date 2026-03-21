@@ -12,6 +12,7 @@ from os.path import splitext
 from typing import Tuple
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
+from io import BytesIO
 np_pi = np.float32(pi)
 
 
@@ -493,12 +494,20 @@ class Timage:
         else:
             raise ValueError('Inappropriate file extension')
         
-    def imshow(self, title=None, figsize=(12, 12), frameon=False, colorbar=False) -> None:
-        plt.figure(figsize=figsize, frameon=frameon)
+    def imshow(self, title=None, figsize=(12, 12), frameon=False, colorbar=False, return_=False) -> None|np.ndarray:
+        fig = plt.figure(figsize=figsize, frameon=frameon)
         plt.axis('off')
         if title: plt.title(title)
         plt.imshow(self.__arr)
         if colorbar: plt.colorbar()
+
+        if return_:
+            buf = BytesIO()
+            fig.savefig(buf, format='png')
+            buf.seek(0)
+            plt.close()
+            img = Image.open(buf)
+            return np.array(img)
 
 
 
