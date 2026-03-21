@@ -1,1 +1,1 @@
-__all__ = ["thermograms.py"]
+__all__ = ["thermograms"]
