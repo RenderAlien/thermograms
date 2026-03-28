@@ -82,7 +82,7 @@ def merge(t1: "Timage", t2: "Timage", vertical=True) -> "Timage":
 
 
 class Timage:
-    def __init__(self, *, image: Image = None, array: np.ndarray = None, dtype: np.dtype = None) -> None:
+    def __init__(self, *, array: np.ndarray = None, dtype: np.dtype = None) -> None:
         """_summary_
 
         Args:
@@ -94,19 +94,8 @@ class Timage:
         """
         ###t = time()
         np.seterr(over='raise') # Сломать всё при переполнении
-        if ((image is None) == (array is None)) or (
-            (image is None) != (dtype is None)):
-            raise ValueError(
-                "Exactly one of 'image' or 'arr' must be provided to initialize Timage."
-            )
-        elif image is not None: #Сразу переводим в серый
-            self.__img = image.convert("L")
-            self.__arr = np.array(self.__img, dtype=dtype)
-            self.__dtype = dtype
-        else:
-            self.__img = Image.fromarray(array).convert("L")
-            self.__arr = array # TODO было np.array(self.__img) изза чего мы теряли мантиссы. сейчас необходимо чтоб входной массив был чб
-            self.__dtype = self.__arr.dtype.type
+        self.__arr = array
+        self.__dtype = self.__arr.dtype.type
         self.shape = self.__arr.shape
 
         ###print('__init__ ' + str(time()-t))
@@ -136,7 +125,7 @@ class Timage:
         return self.__mul__(other)
     
     def __repr__(self) -> str:
-        display(self.__img)
+        display(self.imshow())
         return ""
     
     def __getitem__(self, index):
@@ -195,10 +184,6 @@ class Timage:
 
         
         return Image.fromarray(colored.astype('uint8'))
-
-    @property
-    def image(self) -> Image:
-        return self.__img.copy()
 
     @property
     def array(self) -> np.ndarray:
