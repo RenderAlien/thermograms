@@ -532,6 +532,8 @@ class Tseries:
     def __getitem__(self, index):
         if isinstance(index, int):
             return Timage(array=self.__arr[:, :, index])
+        elif isinstance(index, tuple) and len(index) == 3:
+            return self.__arr[index]
         else:
             return Tseries(array=self.__arr[index])
     
@@ -737,7 +739,7 @@ class Tseries:
         
         binarized = (arr>=threshold).copy()
 
-        return binarized
+        return binarized.astype(np.float16)
 
     def _otsu_check_threshold(self, arr, threshold):
         return np.nansum([
