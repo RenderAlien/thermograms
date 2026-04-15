@@ -642,7 +642,7 @@ class Tseries:
             tser = tser.array
             before_heating = tser[:, :, 0:1]
             peak = tser[:, :, tau_m:tau_m+1]
-            norm = (tser - before_heating) / (peak - before_heating)
+            norm = (tser - before_heating) / (peak - before_heating + 0.001)
         except Exception as e: # there is no heating point because series is cutted and consists only cooling down
             tser = self.array
             norm = (tser - tser[..., -1:]) / (tser[..., 0:1] - tser[..., -1:])
@@ -666,7 +666,7 @@ class Tseries:
             return self._otsu(diff)
         
         threshold = np.percentile(diff, 100-binarization)
-        return (diff>=threshold).copy()
+        return (diff>=threshold).copy().astype(np.float32)
 
     def avg_time(self, frames=3) -> "Tseries":
         """Returns Tseries whose each frame is average along time axis of [frames] frames of the original Tseries"""
@@ -739,7 +739,7 @@ class Tseries:
         
         binarized = (arr>=threshold).copy()
 
-        return binarized.astype(np.float16)
+        return binarized.astype(np.float32)
 
     def _otsu_check_threshold(self, arr, threshold):
         return np.nansum([
