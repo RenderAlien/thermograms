@@ -391,7 +391,7 @@ class Timage:
         flat_interp_coordinates = np.array([interp_i.ravel(), interp_j.ravel()])
 
         flat_distorted = map_coordinates(
-            self.__arr, 
+            self.__arr.astype('float32'), 
             flat_interp_coordinates,
             order=1, #bilinear interpolation
             cval=0.0 # 0.0 is beyond self.__arr
@@ -585,7 +585,7 @@ class Tseries:
         for i in trange(self.shape[2]): # TODO but for some reason one map_coordinates(...) is slower than this loop
 
             flat_distorted = map_coordinates(
-                self.__arr[:, :, i], 
+                self.__arr[:, :, i].astype('float32'), 
                 flat_interp_coordinates,
                 order=1, #bilinear interpolation
                 cval=0.0 # 0.0 is beyond self.__arr
