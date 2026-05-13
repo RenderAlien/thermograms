@@ -18,7 +18,9 @@ np_pi = np.float16(pi)
 
 
 # coefficients for camera distortion correction
-CAM_K = np.array([1, 0, -1e-07*(13245) /1000, 0, (32382)*1e-13 /1000], dtype=np.float64)
+CAM_K = np.array([1, 0, -0.07515798053472203, 0, -0.09030099999921443, 0, 0.020300999997159012], dtype=np.float64)
+
+CAM_K_16060077 = np.array([1, 0, -0.04979900000011126, 0, 0.0002009999998855566, 0.00020099999988783886], dtype=np.float64)
 
 
 WB_PALETTE = np.mgrid[:256, :3][0].astype('uint8') 
@@ -361,20 +363,18 @@ class Timage:
         
         return Timage(array=new)
     
-    def distorted(self, K, shape=None, scale=None) -> "Timage":
+    def distorted(self, K, scale: int = 1) -> "Timage":
         """Distort thermogram via coefficients K"""
-        if shape is None and scale is None:
-            shape = self.shape
-        elif scale is not None:
-            shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
+        shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
+        norm_coord_divisor = np.float64(np.min(self.shape[:2]))
 
-        distorted_center = np.array(shape, dtype=np.float64) / 2
-        undistorted_center = np.array(self.shape, dtype=np.float64) / 2
+        distorted_center = np.array(shape, dtype=np.float64) / norm_coord_divisor / 2
+        undistorted_center = np.array(self.shape, dtype=np.float64) / norm_coord_divisor / 2
         K = np.array(K, dtype=np.float64)
 
         # coordinate mesh
         i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
-        distorted_coordinates = np.stack([i_arr, j_arr], axis=-1)
+        distorted_coordinates = np.stack([i_arr, j_arr], axis=-1) / norm_coord_divisor
 
         # vector to current pixel from center
         d = distorted_coordinates - distorted_center
@@ -384,7 +384,7 @@ class Timage:
 
         mult = np.polynomial.polynomial.polyval(r, K)
 
-        interp_coordinates = undistorted_center + d * mult[..., np.newaxis]
+        interp_coordinates = (undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor
 
         interp_i = interp_coordinates[..., 0]
         interp_j = interp_coordinates[..., 1]
@@ -551,20 +551,18 @@ class Tseries:
         avg = np.average(self.__arr, axis=(0,1))
         return int(np.where(avg == np.max(avg))[0][0])
     
-    def distorted(self, K, shape=None, scale=None) -> "Tseries":
+    def distorted(self, K, scale: int = 1) -> "Tseries":
         """Distort thermograms via coefficients K"""
-        if shape is None and scale is None:
-            shape = self.shape[:2]
-        elif scale is not None:
-            shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
-        
-        distorted_center = np.array(shape, dtype=np.float64) / 2
-        undistorted_center = np.array(self.shape[:2], dtype=np.float64) / 2
+        shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
+        norm_coord_divisor = np.float64(np.min(self.shape[:2]))
+
+        distorted_center = np.array(shape, dtype=np.float64) / norm_coord_divisor / 2
+        undistorted_center = np.array(self.shape[:2], dtype=np.float64) / norm_coord_divisor / 2
         K = np.array(K, dtype=np.float64)
 
         # coordinate mesh
         i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
-        distorted_coordinates = np.stack([i_arr, j_arr], axis=-1)
+        distorted_coordinates = np.stack([i_arr, j_arr], axis=-1) / norm_coord_divisor
 
         # vector to current pixel from center
         d = distorted_coordinates - distorted_center
@@ -574,7 +572,7 @@ class Tseries:
 
         mult = np.polynomial.polynomial.polyval(r, K)
 
-        interp_coordinates = undistorted_center + d * mult[..., np.newaxis]
+        interp_coordinates = (undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor
 
         interp_i = interp_coordinates[..., 0]
         interp_j = interp_coordinates[..., 1]
