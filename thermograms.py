@@ -13,6 +13,7 @@ from typing import Tuple
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from io import BytesIO
+import struct
 np_pi = np.float16(pi)
 
 
@@ -21,6 +22,8 @@ np_pi = np.float16(pi)
 CAM_K = np.array([1, 0, -0.07515798053472203, 0, -0.09030099999921443, 0, 0.020300999997159012], dtype=np.float64)
 
 CAM_K_16060077 = np.array([1, 0, -0.04979900000011126, 0, 0.0002009999998855566, 0.00020099999988783886], dtype=np.float64)
+
+CAM_K_17092098 = np.array([1, 0, -0.04685588805773695, 0, 0.0031440796614895764, 0.00314402953826544], dtype=np.float64)
 
 
 WB_PALETTE = np.mgrid[:256, :3][0].astype('uint8') 
@@ -67,6 +70,28 @@ def read_ravi(path: str) -> np.ndarray:
     
     return video.astype('float16')
 
+def read_fs(path: str) -> np.ndarray:
+    with open(path, 'rb') as f:
+        # Заголовок
+        magic = f.read(8)
+        if magic != b'KSFV_01\x00':
+            raise ValueError(f"Неверный magic: {magic!r}")
+        _, n, h, w = struct.unpack('<IIII', f.read(16))
+
+        if n == 0 or h == 0 or w == 0:
+            raise ValueError(f"Некорректные размеры: N={n} H={h} W={w}")
+
+        # Кадры
+        n_bytes = n * h * w * 4
+        raw = f.read(n_bytes)
+        if len(raw) < n_bytes:
+            raise ValueError(f"Файл обрезан: ожидалось {n_bytes} байт кадров")
+
+        frames = np.frombuffer(raw, dtype='<f4').reshape(n, h, w).transpose(1, 2, 0).copy()
+        # Байты после кадров — OLE CFB (не читается Python-кодом напрямую)
+
+    return frames
+
 
 def loadfile(path: str) -> dict | np.ndarray:
     """Load *.ravi, *.mat, *.npy files"""
@@ -80,6 +105,8 @@ def loadfile(path: str) -> dict | np.ndarray:
             return mat73.loadmat(path)
     elif extension == '.npy':
         return np.load(path)
+    elif extension == '.fs':
+        return read_fs(path)
     else:
         raise ValueError('inappropriate file extension')
 
@@ -533,7 +560,7 @@ class Tseries:
         if isinstance(index, int):
             return Timage(array=self.__arr[:, :, index])
         elif isinstance(index, tuple) and len(index) == 3:
-            return self.__arr[index]
+            return self.__arr[index].copy()
         else:
             return Tseries(array=self.__arr[index])
     

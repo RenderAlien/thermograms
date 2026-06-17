@@ -11,9 +11,14 @@ venv
 
 cam_k_search
 syntesis
+banki
 
 main.ipynb
 model.ipynb
 Timage.py
 Tseries.py
 rolling.ipynb
+banki.ipynb
+
+HDF5_format_spec.md
+KSFV01_format_spec.md
