@@ -13,7 +13,8 @@ from typing import Tuple
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from io import BytesIO
-import struct
+from fs_manipulation import read_fs, save_fs
+import h5py
 np_pi = np.float16(pi)
 
 
@@ -70,28 +71,6 @@ def read_ravi(path: str) -> np.ndarray:
     
     return video.astype('float16')
 
-def read_fs(path: str) -> np.ndarray:
-    with open(path, 'rb') as f:
-        # Заголовок
-        magic = f.read(8)
-        if magic != b'KSFV_01\x00':
-            raise ValueError(f"Неверный magic: {magic!r}")
-        _, n, h, w = struct.unpack('<IIII', f.read(16))
-
-        if n == 0 or h == 0 or w == 0:
-            raise ValueError(f"Некорректные размеры: N={n} H={h} W={w}")
-
-        # Кадры
-        n_bytes = n * h * w * 4
-        raw = f.read(n_bytes)
-        if len(raw) < n_bytes:
-            raise ValueError(f"Файл обрезан: ожидалось {n_bytes} байт кадров")
-
-        frames = np.frombuffer(raw, dtype='<f4').reshape(n, h, w).transpose(1, 2, 0).copy()
-        # Байты после кадров — OLE CFB (не читается Python-кодом напрямую)
-
-    return frames
-
 
 def loadfile(path: str) -> dict | np.ndarray:
     """Load *.ravi, *.mat, *.npy files"""
@@ -107,16 +86,83 @@ def loadfile(path: str) -> dict | np.ndarray:
         return np.load(path)
     elif extension == '.fs':
         return read_fs(path)
+    elif extension == '.tl':
+        f, meta = open_tl(path)
+        return {'data': f, 'meta': meta}
     else:
         raise ValueError('inappropriate file extension')
 
 
-def merge(t1: "Timage", t2: "Timage", vertical=True) -> "Timage":
-    # Merge two thermograms
-    if vertical:
-        return Timage(array=np.append(t1.array, t2.array, axis=0))
-    else:
-        return Timage(array=np.append(t1.array, t2.array, axis=1))
+def open_tl(path: str):
+    """
+    Открывает .tl (HDF5) и возвращает (h5file, meta).
+    Файл остаётся открытым — вызывающий код обязан закрыть его.
+
+    meta = {
+        'n', 'h', 'w',
+        'lut': np.ndarray (65536,) float32,  ← uint16 → °C
+        'attrs': dict,
+        'has_timestamps': bool,
+        'path': str,
+    }
+
+    Конвертация кадра в °C: lut[frame_uint16]
+    """
+    f = h5py.File(path, 'r')
+    try:
+        if 'frames' not in f:
+            raise ValueError("Датасет 'frames' не найден — возможно файл повреждён.")
+
+        shape = f['frames'].shape
+        if len(shape) != 3:
+            raise ValueError(f"Неожиданная форма датасета frames: {shape}")
+
+        N, H, W = shape
+
+        if 'lut' not in f:
+            raise ValueError("Датасет 'lut' не найден — файл записан без LUT, не поддерживается.")
+        lut = f['lut'][:].astype(np.float32)   # загружаем сразу в RAM (256 КБ)
+
+        # Атрибуты для отображения
+        attrs = {k: _fmt_attr(v) for k, v in f.attrs.items()}
+        attrs['n_frames'] = str(N)
+
+        has_ts = 'timestamps' in f and f['timestamps'].shape[0] == N
+        attrs['has_timestamps'] = 'да' if has_ts else 'нет'
+        if has_ts and N >= 2:
+            ts    = f['timestamps']
+            dur   = float(ts[-1]) - float(ts[0])
+            fps_m = (N - 1) / dur if dur > 0 else 0.0
+            attrs['duration_sec'] = f"{dur:.2f}"
+            attrs['fps_measured'] = f"{fps_m:.2f}"
+
+        meta = {
+            'n': N, 'h': H, 'w': W,
+            'lut': np.array(f['lut']),
+            'attrs': attrs,
+            'has_timestamps': has_ts,
+            'path': str(path),
+        }
+        frames: np.ndarray = np.array(f['frames']).transpose(1, 2, 0).copy()
+        frames = np.take(meta['lut'], frames)
+        f.close()
+        return frames, meta
+
+    except Exception:
+        f.close()
+        raise
+
+def _fmt_attr(v) -> str:
+    """Форматирует значение HDF5-атрибута для отображения."""
+    if isinstance(v, (bytes, np.bytes_)):
+        return v.decode('utf-8', errors='replace')
+    if isinstance(v, (np.floating, float)):
+        return f"{float(v):.6g}"
+    if isinstance(v, (np.integer, int)):
+        return str(int(v))
+    if isinstance(v, np.ndarray):
+        return f"array{v.shape} {v.dtype}"
+    return str(v)
 
 
 class Timage:
