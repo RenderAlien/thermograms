@@ -13,7 +13,7 @@ from typing import Tuple
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from io import BytesIO
-from fs_manipulation import read_fs, save_fs
+from .fs_manipulation import read_fs, save_fs
 import h5py
 np_pi = np.float16(pi)
 
