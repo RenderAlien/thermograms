@@ -62,10 +62,8 @@ def read_ravi(path: str) -> np.ndarray:
         if not ret:
             break  # Stop reading frames when ret = False (after the last frame is read).
 
-        # View frame as int16 elements, and reshape to cols x rows (each pixel is signed 16 bits)
-        frame = frame.view(np.int16).reshape(rows, cols)
-
-        video[:,:,k] = frame[1:, :]  # Ignore the first row.
+        # View frame as int16 elements, and reshape to cols x rows (each pixel is signed 16 bits) and ignore the first row.
+        video[:,:,k] = frame.view(np.int16).reshape(rows, cols)[1:, :]  # Ignore the first row.
     
     cap.release()
     
@@ -176,13 +174,9 @@ class Timage:
         Raises:
             ValueError: Exactly one of 'image' or 'arr' must be provided to initialize Timage.
         """
-        ###t = time()
-        np.seterr(over='raise') # Сломать всё при переполнении
         self.__arr = array
         self.__dtype = self.__arr.dtype.type
         self.shape = self.__arr.shape
-
-        ###print('__init__ ' + str(time()-t))
 
     def __add__(self, other: "Timage") -> "Timage":
         if self.shape != other.shape:
@@ -299,7 +293,7 @@ class Timage:
 
         new = convolve2d(self.__arr, G, mode='same', boundary='symm')
 
-        return Timage(array=np.clip(new, 0., 255.))
+        return Timage(array=new)
 
     def salt_and_pepper_noise(self, intensity=0.1) -> "Timage":
         """Add noise consisting of 0 and 255"""
@@ -386,55 +380,54 @@ class Timage:
 
     def resized(self, shape) -> "Timage":
         """Resize thermogram"""
-        new = np.zeros(shape, dtype=self.dtype)
-        ki = (self.shape[0] - 1) / (shape[0] - 1)
-        kj = (self.shape[1] - 1) / (shape[1] - 1)
+        if shape == self.shape:
+            return self
 
-        for i in range(shape[0]):
-            for j in range(shape[1]):
-                new[i,j] = self[i*ki, j*kj]
-        
-        return Timage(array=new)
+        out = cv2.resize(
+            self.array.astype(np.float32), shape[::-1],
+            interpolation=cv2.INTER_AREA if shape[0]<self.shape[0] or shape[1]<self.shape else cv2.INTER_LINEAR
+        )
+
+        return Timage(array=out.astype(self.dtype))
     
     def rotated(self, angle, degrees=False) -> "Timage":
-        """Rotate thermogram"""
+        """Rotate thermogram."""
+        H, W = self.shape
+
+        # ---- Normalize angle + exact fast paths -------------------------------
         if degrees:
-            angle %= 360
-            if angle % 90 == 0:
-                if angle < 0: angle += 360
-                if angle == 0: return Timage(array=self.array)
-                elif angle == 90: return Timage(array=self.array.T[::-1])
-                elif angle == 180: return Timage(array=self.array[::-1, ::-1])
-                elif angle == 270: return Timage(array=self.array[::-1].T)
-            angle *= pi/180
+            angle = float(angle) % 360.0
+            if angle == 0.0:
+                return Timage(array=self.array)
+            if angle == 90.0:
+                return Timage(array=self.array.T[::-1])
+            if angle == 180.0:
+                return Timage(array=self.array[::-1, ::-1])
+            if angle == 270.0:
+                return Timage(array=self.array[::-1].T)
+            angle_deg = angle
         else:
-            angle %= 2*pi
-        
-        #new_size = max(self.__arr.shape) * 3 // 2 # TODO
+            theta = float(angle) % (2.0 * pi)
+            if theta == 0.0:
+                return Timage(array=self.array)
+            angle_deg = theta * 180.0 / pi
 
-        new = np.zeros(self.shape, dtype=self.dtype)
+        src = self.__arr
+        work_dtype = np.float32 if src.dtype == np.float16 else src.dtype
+        src = src.astype(work_dtype, copy=False)
 
-        center = (new.shape[0] / 2, new.shape[1]/2)
-        self_center = (self.shape[0] / 2, self.shape[1] / 2)
+        center = ((W - 1) * 0.5, (H - 1) * 0.5)
 
-        def f(x, y):
-            r = (x**2 + y**2) ** 0.5
-            if r == 0: phi = 0
-            elif y >= 0:
-                phi = acos(x / r)
-            else:
-                phi = 2*pi - acos(x / r)
-            self_i = self_center[0] + r * cos(phi - angle)
-            self_j = self_center[1] + r * sin(phi - angle)
-            return (self_i, self_j, 'fl')
+        M = cv2.getRotationMatrix2D(center, -angle_deg, 1.0)
 
-        for i in range(new.shape[0]):
-            for j in range(new.shape[1]):
-                x = i - center[0]
-                y = j - center[1]
-                new[i,j] = self[f(x, y)]
-        
-        return Timage(array=new)
+        out = cv2.warpAffine(
+            src, M, (W, H),
+            flags=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0.0,
+        )
+
+        return Timage(array=out.astype(self.dtype, copy=False))
     
     def distorted(self, K, scale: int = 1) -> "Timage":
         """Distort thermogram via coefficients K"""
@@ -471,32 +464,6 @@ class Timage:
         )
         distorted = flat_distorted.reshape(shape).astype(self.dtype)
         return Timage(array=distorted)
-        
-    def lin_transform(self, T, shape=None, scale=None) -> "Timage":
-        """Apply linear transformation"""
-        if shape is None and scale is None:
-            shape = self.__arr.shape
-        elif scale is not None:
-            shape = (  int(self.__arr.shape[0]*scale), int(self.__arr.shape[1]*scale)  )
-        new = np.zeros(shape, dtype=self.dtype)
-
-        inv_T = np.linalg.inv(T)
-
-        for i in range(shape[0]):
-            for j in range(shape[1]):
-                x = j - shape[1] / 2
-                y = -i + shape[0] / 2
-
-                r = [[x],
-                     [y]]
-                
-                undistorted_r = inv_T @ r
-                undistorted_x, undistorted_y = undistorted_r[0][0], undistorted_r[1][0]
-                undistorted_i = self.__arr.shape[0]/2 - undistorted_y
-                undistorted_j = self.__arr.shape[0]/2 + undistorted_x
-                new[i,j] = self[undistorted_i, undistorted_j, 'fl']
-        
-        return Timage(array=new)
     
     def homography_transform(self, src_points, dst_points, shape=None, scale=None) -> "Timage":
         """Apply affine transformation"""
@@ -548,7 +515,7 @@ class Timage:
         if extension == '.npy':
             np.save(path, self.__arr)
         elif extension == '.mat':
-            savemat(path, {'data': self.__arr})
+            savemat(path, {'data': self.__arr}, do_compression=True)
         else:
             raise ValueError('Inappropriate file extension')
         
@@ -647,23 +614,27 @@ class Tseries:
 
         interp_coordinates = (undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor
 
-        interp_i = interp_coordinates[..., 0]
-        interp_j = interp_coordinates[..., 1]
-        flat_interp_coordinates = np.array([interp_i.ravel(), interp_j.ravel()])
+        interp_i = interp_coordinates[..., 0].astype('float32')
+        interp_j = interp_coordinates[..., 1].astype('float32')
 
         distorted = np.zeros(shape=(*shape, self.shape[2]), dtype=self.dtype)
 
-        for i in trange(self.shape[2]): # TODO but for some reason one map_coordinates(...) is slower than this loop
+        for i in trange(self.shape[2]):
 
-            flat_distorted = map_coordinates(
+            #flat_distorted = map_coordinates(
+            #    self.__arr[:, :, i].astype('float32'), 
+            #    flat_interp_coordinates,
+            #    order=1, #bilinear interpolation
+            #    cval=0.0 # 0.0 is beyond self.__arr
+            #)
+            distorted[..., i] = cv2.remap(
                 self.__arr[:, :, i].astype('float32'), 
-                flat_interp_coordinates,
-                order=1, #bilinear interpolation
-                cval=0.0 # 0.0 is beyond self.__arr
+                interp_j, interp_i,
+                interpolation=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT, borderValue=0.0,
             )
-            distorted[..., i] = flat_distorted.reshape(shape).astype(self.dtype)
 
-        return Tseries(array=distorted)
+        return Tseries(array=distorted.astype(self.dtype))
 
     def gaussian_blur(self, stddev=1, radius=3, circle = True) -> "Tseries":
         """Apply a gaussian filter"""
@@ -703,7 +674,7 @@ class Tseries:
         for i in range(self.__arr.shape[2]):
             new[..., i] = convolve2d(self.__arr[..., i], G, mode='same', boundary='symm')
 
-        return Tseries(array=np.clip(new, 0., 255.))
+        return Tseries(array=new)
 
     def std_map(self, nd: str | Tuple[int] = 'avg', binarization: str | float = 'otsu') -> np.ndarray:
         """This method normalizes and returns 2d array of stddevs: map[i, j] = sum( (norm[i,j,tau] - nd of tau)**2 ) or its binarized version"""
