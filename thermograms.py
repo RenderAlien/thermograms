@@ -5,7 +5,7 @@ from tqdm import trange
 from IPython.display import display
 from scipy.io import loadmat, savemat
 from scipy.signal import convolve2d
-from scipy.ndimage import median_filter, map_coordinates
+from scipy.ndimage import median_filter
 import cv2
 import mat73
 from os.path import splitext
@@ -450,19 +450,18 @@ class Timage:
 
         mult = np.polynomial.polynomial.polyval(r, K)
 
-        interp_coordinates = (undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor
+        interp_coordinates = ((undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor).astype('float32')
 
         interp_i = interp_coordinates[..., 0]
         interp_j = interp_coordinates[..., 1]
-        flat_interp_coordinates = np.array([interp_i.ravel(), interp_j.ravel()])
 
-        flat_distorted = map_coordinates(
+        distorted = cv2.remap(
             self.__arr.astype('float32'), 
-            flat_interp_coordinates,
-            order=1, #bilinear interpolation
-            cval=0.0 # 0.0 is beyond self.__arr
+            interp_j, interp_i,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0.0,
         )
-        distorted = flat_distorted.reshape(shape).astype(self.dtype)
+        distorted = distorted.astype(self.dtype)
         return Timage(array=distorted)
     
     def homography_transform(self, src_points, dst_points, shape=None, scale=None) -> "Timage":
@@ -479,17 +478,24 @@ class Timage:
         i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
         coordinates = np.array([i_arr.ravel(), j_arr.ravel(), np.ones(((shape[0]*shape[1])))])
 
-        transformed_coords_with_w = H @ coordinates
+        transformed_coords_with_w = (H @ coordinates).astype('float32')
         transformed_coords = np.array([transformed_coords_with_w[0] / transformed_coords_with_w[2], transformed_coords_with_w[1] / transformed_coords_with_w[2]])
 
-        flat_transformed = map_coordinates(
-            self.__arr, 
-            transformed_coords,
-            order=1, #bilinear interpolation
-            mode = 'constant',
-            cval=0.0 # 0.0 is beyond self.__arr
-        )
-        transformed = flat_transformed.reshape(shape).astype(self.dtype)
+        #flat_transformed = map_coordinates(
+        #    self.__arr, 
+        #    transformed_coords,
+        #    order=1, #bilinear interpolation
+        #    mode = 'constant',
+        #    cval=0.0 # 0.0 is beyond self.__arr
+        #)
+        #transformed = flat_transformed.reshape(shape).astype(self.dtype)
+        transformed = cv2.remap(
+            self.__arr.astype('float32'), 
+            (transformed_coords_with_w[1] / transformed_coords_with_w[2]).reshape(shape),
+            (transformed_coords_with_w[0] / transformed_coords_with_w[2]).reshape(shape),
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0.0,
+        ).astype(self.dtype)
         return Timage(array=transformed)
     
     def diapason_transform(self, in_diapason, out_diapason) -> "Timage":
@@ -612,21 +618,15 @@ class Tseries:
 
         mult = np.polynomial.polynomial.polyval(r, K)
 
-        interp_coordinates = (undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor
+        interp_coordinates = ((undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor).astype('float32')
 
-        interp_i = interp_coordinates[..., 0].astype('float32')
-        interp_j = interp_coordinates[..., 1].astype('float32')
+        interp_i = interp_coordinates[..., 0]
+        interp_j = interp_coordinates[..., 1]
 
         distorted = np.zeros(shape=(*shape, self.shape[2]), dtype=self.dtype)
 
         for i in trange(self.shape[2]):
 
-            #flat_distorted = map_coordinates(
-            #    self.__arr[:, :, i].astype('float32'), 
-            #    flat_interp_coordinates,
-            #    order=1, #bilinear interpolation
-            #    cval=0.0 # 0.0 is beyond self.__arr
-            #)
             distorted[..., i] = cv2.remap(
                 self.__arr[:, :, i].astype('float32'), 
                 interp_j, interp_i,
@@ -735,21 +735,20 @@ class Tseries:
         i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
         coordinates = np.array([i_arr.ravel(), j_arr.ravel(), np.ones(((shape[0]*shape[1])))])
 
-        transformed_coords_with_w = H @ coordinates
+        transformed_coords_with_w = (H @ coordinates).astype('float32')
         transformed_coords = np.array([transformed_coords_with_w[0] / transformed_coords_with_w[2], transformed_coords_with_w[1] / transformed_coords_with_w[2]])
 
         new = np.zeros(shape=(*shape, self.shape[2]), dtype=self.dtype)
 
         for i in range(self.shape[2]):
 
-            flat_transformed = map_coordinates(
-                self.__arr[:, :, i], 
-                transformed_coords,
-                order=1, #bilinear interpolation
-                mode = 'constant',
-                cval=0.0 # 0.0 is beyond self.__arr
-            )
-            new[:, :, i] = flat_transformed.reshape(shape).astype(self.dtype)
+            new[:, :, i] = cv2.remap(
+                self.__arr[:, :, i].astype('float32'), 
+                (transformed_coords_with_w[1] / transformed_coords_with_w[2]).reshape(shape),
+                (transformed_coords_with_w[0] / transformed_coords_with_w[2]).reshape(shape),
+                interpolation=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT, borderValue=0.0,
+            ).astype(self.dtype)
 
         return Tseries(array=new)
 
