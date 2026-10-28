@@ -10,6 +10,7 @@ import cv2
 import mat73
 from os.path import splitext
 from typing import Tuple
+from functools import lru_cache
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from io import BytesIO
@@ -161,6 +162,40 @@ def _fmt_attr(v) -> str:
     if isinstance(v, np.ndarray):
         return f"array{v.shape} {v.dtype}"
     return str(v)
+
+
+@lru_cache(maxsize=8)
+def _distortion_maps(src_shape: Tuple[int, int], K: Tuple[float, ...], scale) -> Tuple[np.ndarray, np.ndarray]:
+    """cv2.remap maps (map_x, map_y) for distorted().
+    Depend only on frame shape, K and scale, so they are computed once and cached:
+    repeated calls on frames of the same camera skip the mesh and the polynomial."""
+    shape = (  int(src_shape[0]*scale), int(src_shape[1]*scale)  )
+    norm_coord_divisor = np.float64(np.min(src_shape))
+
+    distorted_center = np.array(shape, dtype=np.float64) / norm_coord_divisor / 2
+    undistorted_center = np.array(src_shape, dtype=np.float64) / norm_coord_divisor / 2
+
+    # vector from center to current pixel, rows (column vector) and columns (row vector);
+    # broadcasting replaces the full coordinate mesh
+    d_i = np.arange(shape[0], dtype=np.float64)[:, np.newaxis] / norm_coord_divisor - distorted_center[0]
+    d_j = np.arange(shape[1], dtype=np.float64)[np.newaxis, :] / norm_coord_divisor - distorted_center[1]
+
+    # distance to current pixel
+    r = np.sqrt(d_i**2 + d_j**2)
+
+    mult = np.polynomial.polynomial.polyval(r, np.array(K, dtype=np.float64))
+
+    interp_i = ((undistorted_center[0] + d_i * mult) * norm_coord_divisor).astype('float32')
+    interp_j = ((undistorted_center[1] + d_j * mult) * norm_coord_divisor).astype('float32')
+
+    # maps are shared between calls through the cache
+    interp_i.setflags(write=False)
+    interp_j.setflags(write=False)
+    return interp_j, interp_i
+
+
+def _cache_key_K(K) -> Tuple[float, ...]:
+    return tuple(np.array(K, dtype=np.float64).ravel().tolist())
 
 
 class Timage:
@@ -431,29 +466,7 @@ class Timage:
     
     def distorted(self, K, scale: int = 1) -> "Timage":
         """Distort thermogram via coefficients K"""
-        shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
-        norm_coord_divisor = np.float64(np.min(self.shape[:2]))
-
-        distorted_center = np.array(shape, dtype=np.float64) / norm_coord_divisor / 2
-        undistorted_center = np.array(self.shape, dtype=np.float64) / norm_coord_divisor / 2
-        K = np.array(K, dtype=np.float64)
-
-        # coordinate mesh
-        i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
-        distorted_coordinates = np.stack([i_arr, j_arr], axis=-1) / norm_coord_divisor
-
-        # vector to current pixel from center
-        d = distorted_coordinates - distorted_center
-
-        # distance to current pixel
-        r = np.sqrt(np.sum(d**2, axis=-1))
-
-        mult = np.polynomial.polynomial.polyval(r, K)
-
-        interp_coordinates = ((undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor).astype('float32')
-
-        interp_i = interp_coordinates[..., 0]
-        interp_j = interp_coordinates[..., 1]
+        interp_j, interp_i = _distortion_maps(tuple(self.shape[:2]), _cache_key_K(K), scale)
 
         distorted = cv2.remap(
             self.__arr.astype('float32'), 
@@ -599,42 +612,25 @@ class Tseries:
     
     def distorted(self, K, scale: int = 1) -> "Tseries":
         """Distort thermograms via coefficients K"""
-        shape = (  int(self.shape[0]*scale), int(self.shape[1]*scale)  )
-        norm_coord_divisor = np.float64(np.min(self.shape[:2]))
-
-        distorted_center = np.array(shape, dtype=np.float64) / norm_coord_divisor / 2
-        undistorted_center = np.array(self.shape[:2], dtype=np.float64) / norm_coord_divisor / 2
-        K = np.array(K, dtype=np.float64)
-
-        # coordinate mesh
-        i_arr, j_arr = np.mgrid[0:shape[0], 0:shape[1]]
-        distorted_coordinates = np.stack([i_arr, j_arr], axis=-1) / norm_coord_divisor
-
-        # vector to current pixel from center
-        d = distorted_coordinates - distorted_center
-
-        # distance to current pixel
-        r = np.sqrt(np.sum(d**2, axis=-1))
-
-        mult = np.polynomial.polynomial.polyval(r, K)
-
-        interp_coordinates = ((undistorted_center + d * mult[..., np.newaxis]) * norm_coord_divisor).astype('float32')
-
-        interp_i = interp_coordinates[..., 0]
-        interp_j = interp_coordinates[..., 1]
+        interp_j, interp_i = _distortion_maps(tuple(self.shape[:2]), _cache_key_K(K), scale)
+        shape = interp_i.shape
 
         distorted = np.zeros(shape=(*shape, self.shape[2]), dtype=self.dtype)
 
-        for i in trange(self.shape[2]):
+        # cv2.remap takes up to 512 channels at once: frames of a chunk are remapped
+        # in one call, interpolation weights are computed once per pixel for the whole chunk.
+        # 128 frames is close to the speed of 512 at a quarter of the temporary memory
+        chunk = 128
+        for i in trange(0, self.shape[2], chunk):
 
-            distorted[..., i] = cv2.remap(
-                self.__arr[:, :, i].astype('float32'), 
+            distorted[..., i:i + chunk] = cv2.remap(
+                np.ascontiguousarray(self.__arr[:, :, i:i + chunk], dtype='float32'), 
                 interp_j, interp_i,
                 interpolation=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT, borderValue=0.0,
-            )
+            ).reshape(*shape, -1)
 
-        return Tseries(array=distorted.astype(self.dtype))
+        return Tseries(array=distorted)
 
     def gaussian_blur(self, stddev=1, radius=3, circle = True) -> "Tseries":
         """Apply a gaussian filter"""
