@@ -13,7 +13,7 @@ from typing import Tuple
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from io import BytesIO
-from .fs_manipulation import read_fs, save_fs
+from fs_manipulation import read_fs, save_fs
 import h5py
 np_pi = np.float16(pi)
 
@@ -770,6 +770,34 @@ class Tseries:
         """Principal component analysis"""
         pca_model = PCA(n_components=n_components).fit(self.__arr.reshape(-1, self.shape[2]).T)
         return pca_model.components_.T.reshape(*self.shape[:2], -1)
+
+    def tsr(self, degree) -> "Tseries":
+        "Thermographic signal reconstruction"
+        height, width, num_frames = self.shape
+
+        signal = self.array - np.median(self.array, axis=(0, 1))
+        signal -= signal.min(axis=2, keepdims=True)
+        signal /= signal.max(axis=2, keepdims=True)
+        signal += 0.001
+
+        ln_t = np.log10(np.arange(1, num_frames+1))  # (Время,)
+        ln_T = np.log10(signal) # (Высота, Ширина, Время)
+
+        ln_T_2d = ln_T.reshape(-1, num_frames).T  # Форма: (Время, Пиксели)
+
+        V = np.vander(ln_t, degree + 1, increasing=True) # Форма: (Время, poly_degree + 1)
+
+        coefs_2d, _, _, _ = np.linalg.lstsq(V, ln_T_2d, rcond=None) # (poly_degree + 1, Пиксели)
+
+        ln_T_rec_2d = np.zeros_like(ln_T_2d)
+
+        for n in range(degree + 1):
+            time_power = ln_t ** n
+            ln_T_rec_2d += np.outer(time_power, coefs_2d[n])
+
+        reconstructed = 10 ** (ln_T_rec_2d.T.reshape(height, width, num_frames))
+
+        return Tseries(array=reconstructed)
 
     def _otsu(self, arr, bins = 1000):
         """Otsu binarization"""

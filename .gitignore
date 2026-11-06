@@ -12,6 +12,7 @@ venv
 cam_k_search
 syntesis
 banki
+derivative_app
 
 main.ipynb
 model.ipynb
